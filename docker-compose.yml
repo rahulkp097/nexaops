@@ -7,7 +7,12 @@ services:
       POSTGRES_PASSWORD: nexaops
       POSTGRES_DB: nexaops
     ports:
-      - "5432:5432"
+      # Host port remapped to 55432: this machine already runs a native
+      # Postgres on 127.0.0.1:5432/::1:5432 (Postgres.app or similar) that
+      # wins the loopback race against Docker's mapping. Only affects
+      # host-side tools (migrations, `npm run dev` outside Docker) —
+      # container-to-container traffic always uses the internal 5432.
+      - "55432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +25,9 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      # Host port remapped to 56379: this machine already runs a native
+      # Redis on 127.0.0.1:6379/::1:6379 — same reasoning as postgres above.
+      - "56379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -48,6 +55,10 @@ services:
       dockerfile: infra/docker/gateway.Dockerfile
     restart: unless-stopped
     env_file: .env
+    environment:
+      DATABASE_APP_URL: postgresql://nexaops_app:${DB_APP_PASSWORD}@postgres:5432/nexaops
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://nexaops:nexaops@rabbitmq:5672
     ports:
       - "4000:4000"
     depends_on:
@@ -64,6 +75,9 @@ services:
       dockerfile: infra/docker/ai-service.Dockerfile
     restart: unless-stopped
     env_file: .env
+    environment:
+      DATABASE_APP_URL: postgresql://nexaops_app:${DB_APP_PASSWORD}@postgres:5432/nexaops
+      REDIS_URL: redis://redis:6379
     ports:
       - "8000:8000"
     depends_on:
@@ -78,6 +92,9 @@ services:
       dockerfile: infra/docker/document-worker.Dockerfile
     restart: unless-stopped
     env_file: .env
+    environment:
+      DATABASE_APP_URL: postgresql://nexaops_app:${DB_APP_PASSWORD}@postgres:5432/nexaops
+      RABBITMQ_URL: amqp://nexaops:nexaops@rabbitmq:5672
     ports:
       - "4100:4100"
     depends_on:

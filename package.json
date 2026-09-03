@@ -14,7 +14,15 @@
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:gateway": "npm run start:dev --workspace=apps/gateway",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "db:migrate": "node-pg-migrate --envPath ./.env -m infra/database/migrations up",
+    "db:migrate:down": "node-pg-migrate --envPath ./.env -m infra/database/migrations down",
+    "db:migrate:create": "node-pg-migrate -m infra/database/migrations create"
+  },
+  "devDependencies": {
+    "node-pg-migrate": "^9.0.0",
+    "pg": "^8.23.0",
+    "@types/pg": "^8.23.1"
   },
   "engines": {
     "node": ">=20"

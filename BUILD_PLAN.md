@@ -98,4 +98,4 @@ The spec includes a ready-made agent prompt (§43): work one phase at a time, in
 
 ## Next step
 
-Start Phase 0: repo + monorepo scaffold, Docker Compose, health endpoints. Definition of done: all infra containers healthy, all app services start locally.
+Phase 0 (foundation) and Phase 1 (local infra — pgvector, DB roles, Redis, RabbitMQ topology, real dependency health checks) are done. Next: Phase 2 — Auth, JWT, RBAC, tenant isolation.
