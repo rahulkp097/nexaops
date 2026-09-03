@@ -1,0 +1,22 @@
+{
+  "name": "nexaops",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web",
+    "apps/gateway",
+    "services/document-worker",
+    "services/mock-business",
+    "packages/shared-types",
+    "packages/config"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:gateway": "npm run start:dev --workspace=apps/gateway",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
