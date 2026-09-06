@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { HealthCheck, HealthCheckService } from '@nestjs/terminus';
+import { Public } from '../auth/decorators/public.decorator';
 import { PostgresHealthIndicator } from './indicators/postgres.health-indicator';
 import { RabbitmqHealthIndicator } from './indicators/rabbitmq.health-indicator';
 import { RedisHealthIndicator } from './indicators/redis.health-indicator';
@@ -13,6 +14,9 @@ export class HealthController {
     private readonly rabbitmq: RabbitmqHealthIndicator,
   ) {}
 
+  // Infra health probes must stay unauthenticated (load balancers/orchestrators
+  // hit this with no credentials) — this predates JwtAuthGuard being global.
+  @Public()
   @Get()
   @HealthCheck()
   check() {

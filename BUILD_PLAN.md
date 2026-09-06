@@ -98,4 +98,4 @@ The spec includes a ready-made agent prompt (§43): work one phase at a time, in
 
 ## Next step
 
-Phase 0 (foundation) and Phase 1 (local infra — pgvector, DB roles, Redis, RabbitMQ topology, real dependency health checks) are done. Next: Phase 2 — Auth, JWT, RBAC, tenant isolation.
+Phase 0 (foundation), Phase 1 (local infra — pgvector, DB roles, Redis, RabbitMQ topology, real dependency health checks), and Phase 2 (auth — JWT access/refresh tokens with rotation and reuse detection, RBAC guards, tenant-scoped request context, audit logging) are done. Next: Phase 3 — Document management (upload, storage, status).
