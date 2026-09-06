@@ -61,6 +61,8 @@ services:
       RABBITMQ_URL: amqp://nexaops:nexaops@rabbitmq:5672
     ports:
       - "4000:4000"
+    volumes:
+      - document_storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,6 +99,8 @@ services:
       RABBITMQ_URL: amqp://nexaops:nexaops@rabbitmq:5672
     ports:
       - "4100:4100"
+    volumes:
+      - document_storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -125,3 +129,4 @@ services:
 
 volumes:
   postgres_data:
+  document_storage:
