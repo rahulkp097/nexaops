@@ -1,5 +1,6 @@
 import { ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Pool } from 'pg';
+import { isUniqueViolation } from '../database/pg-errors.util';
 import { PG_POOL } from '../database/pg-pool.provider';
 import { Queryable, withTransaction } from '../database/transaction.util';
 import { AuditService } from '../audit/audit.service';
@@ -213,10 +214,4 @@ export class AuthService {
       },
     };
   }
-}
-
-// Postgres unique_violation (23505) — thrown by the case-insensitive unique
-// index on users(lower(email)) when registering an already-used email.
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505';
 }
