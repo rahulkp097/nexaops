@@ -101,6 +101,7 @@ services:
       - "4100:4100"
     volumes:
       - document_storage:/app/storage
+      - model_cache:/app/.cache/transformers
     depends_on:
       postgres:
         condition: service_healthy
@@ -130,3 +131,4 @@ services:
 volumes:
   postgres_data:
   document_storage:
+  model_cache:

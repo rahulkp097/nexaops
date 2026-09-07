@@ -1,6 +1,9 @@
 import express from 'express';
 import { checkDatabase } from './db';
+import { getEmbeddingPipeline } from './model/embeddings';
+import { getTokenizer } from './model/tokenizer';
 import { checkRabbitmq, getConnection } from './rabbitmq/health';
+import { startConsumer } from './rabbitmq/consumer';
 import { setupTopology } from './rabbitmq/topology';
 
 const app = express();
@@ -23,13 +26,22 @@ app.listen(port, () => {
   console.log(`Document worker health server listening on port ${port}`);
 });
 
-// Queue consumer wiring (channel.consume) is added in Phase 4. This only
-// declares the topology so it exists ahead of time and is exercised by
-// the health check.
-getConnection()
-  .then((connection) => connection.createChannel())
-  .then((channel) => setupTopology(channel))
-  .catch((error) => {
-    // eslint-disable-next-line no-console
-    console.error('Failed to set up RabbitMQ topology', error);
-  });
+async function startIngestion(): Promise<void> {
+  const connection = await getConnection();
+  const channel = await connection.createChannel();
+  await setupTopology(channel);
+
+  // Warm up the model once at startup, not on whichever message happens
+  // to arrive first — surfaces model-load/network failures in boot logs
+  // and avoids a slow cold start mid-batch.
+  await Promise.all([getTokenizer(), getEmbeddingPipeline()]);
+
+  await startConsumer(channel);
+  // eslint-disable-next-line no-console
+  console.log('Document ingestion consumer started');
+}
+
+startIngestion().catch((error) => {
+  // eslint-disable-next-line no-console
+  console.error('Failed to start document ingestion consumer', error);
+});
