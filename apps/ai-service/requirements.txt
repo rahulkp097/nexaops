@@ -5,3 +5,9 @@ pydantic-settings==2.7.0
 httpx==0.28.1
 asyncpg==0.31.0
 redis==8.1.0
+anthropic==1.4.0
+onnxruntime==1.29.0
+tokenizers==0.23.2
+huggingface-hub==1.30.0
+pgvector==0.5.0
+numpy==2.4.6
