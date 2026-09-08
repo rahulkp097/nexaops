@@ -4,8 +4,13 @@ from uuid import uuid4
 import pytest
 
 from app.rag.errors import LlmRequestError, LlmUnavailableError
-from app.rag.service import run_rag_query
+from app.rag.schemas import HistoryMessageDto
+from app.rag.service import run_rag_query, stream_rag_query
 from app.rag.types import RetrievedChunk
+
+
+async def _collect(async_iterator):
+    return [item async for item in async_iterator]
 
 
 def _make_chunk(**overrides):
@@ -92,7 +97,7 @@ async def test_retrieve_is_called_with_question_text_top_k_and_candidate_pool_si
 
     org_id = uuid4()
     metadata_filter = {"category": "policy"}
-    await run_rag_query("What is the refund policy?", org_id, metadata_filter)
+    await run_rag_query("What is the refund policy?", org_id, metadata_filter=metadata_filter)
 
     mock_retrieve.assert_awaited_once_with(
         org_id,
@@ -102,3 +107,72 @@ async def test_retrieve_is_called_with_question_text_top_k_and_candidate_pool_si
         candidate_pool_size=20,
         metadata_filter=metadata_filter,
     )
+
+
+@patch("app.rag.service.generate_answer", new_callable=AsyncMock)
+@patch("app.rag.service.retrieve_top_chunks", new_callable=AsyncMock)
+@patch("app.rag.service.embed_query", new_callable=AsyncMock)
+async def test_run_rag_query_forwards_history_and_question_as_messages(
+    mock_embed, mock_retrieve, mock_generate
+):
+    mock_embed.return_value = [0.1]
+    mock_retrieve.return_value = []
+    mock_generate.return_value = "answer"
+    history = [
+        HistoryMessageDto(role="user", content="Hi"),
+        HistoryMessageDto(role="assistant", content="Hello!"),
+    ]
+
+    await run_rag_query("Follow-up question?", uuid4(), history=history)
+
+    messages = mock_generate.call_args.kwargs["messages"]
+    assert messages[0] == {"role": "user", "content": "Hi"}
+    assert messages[1] == {"role": "assistant", "content": "Hello!"}
+    assert messages[2]["role"] == "user"
+    assert "Follow-up question?" in messages[2]["content"]
+
+
+@patch("app.rag.service.stream_answer")
+@patch("app.rag.service.retrieve_top_chunks", new_callable=AsyncMock)
+@patch("app.rag.service.embed_query", new_callable=AsyncMock)
+async def test_stream_rag_query_emits_sources_then_tokens_then_done(
+    mock_embed, mock_retrieve, mock_stream_answer
+):
+    mock_embed.return_value = [0.1, 0.2]
+    chunk = _make_chunk()
+    mock_retrieve.return_value = [chunk]
+
+    async def fake_stream_answer(**_kwargs):
+        for token in ["Refunds ", "within 30 days."]:
+            yield token
+
+    mock_stream_answer.side_effect = fake_stream_answer
+
+    events = await _collect(stream_rag_query("What is the refund policy?", uuid4()))
+
+    assert [evt.event for evt in events] == ["source", "token", "token", "done"]
+    assert events[0].data["chunkId"] == str(chunk.chunk_id)
+    assert events[1].data == {"text": "Refunds "}
+    assert events[2].data == {"text": "within 30 days."}
+    assert events[3].data["answer"] == "Refunds within 30 days."
+    assert events[3].data["model"] == "claude-sonnet-5"
+    assert events[3].data["provider"] == "anthropic"
+
+
+@patch("app.rag.service.stream_answer")
+@patch("app.rag.service.retrieve_top_chunks", new_callable=AsyncMock)
+@patch("app.rag.service.embed_query", new_callable=AsyncMock)
+async def test_stream_rag_query_propagates_llm_errors_after_sources(
+    mock_embed, mock_retrieve, mock_stream_answer
+):
+    mock_embed.return_value = [0.1]
+    mock_retrieve.return_value = []
+
+    async def fake_stream_answer(**_kwargs):
+        raise LlmUnavailableError("rate limited")
+        yield  # pragma: no cover - makes this an async generator function
+
+    mock_stream_answer.side_effect = fake_stream_answer
+
+    with pytest.raises(LlmUnavailableError):
+        await _collect(stream_rag_query("question", uuid4()))

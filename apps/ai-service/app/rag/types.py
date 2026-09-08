@@ -4,6 +4,15 @@ from uuid import UUID
 
 
 @dataclass(frozen=True)
+class RagStreamEvent:
+    """One SSE event yielded by stream_rag_query — event is the SSE `event:`
+    name ("source" | "token" | "done"), data is its JSON-serializable payload."""
+
+    event: str
+    data: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class RetrievedChunk:
     chunk_id: UUID
     document_id: UUID

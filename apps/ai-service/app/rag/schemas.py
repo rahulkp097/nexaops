@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,9 +13,21 @@ class CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
+class HistoryMessageDto(CamelModel):
+    """One prior conversation turn (Phase 8's "retrieve relevant history"),
+    supplied by the gateway from its conversations/messages tables. Kept to
+    plain role+content — summarization of long history is Phase 16's job."""
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class RagQueryRequest(CamelModel):
     question: str = Field(..., min_length=1, max_length=2000)
     organization_id: UUID
+    # Prior turns of the same conversation, oldest first, excluding
+    # `question` itself. Empty for a conversation's first message.
+    history: list[HistoryMessageDto] = []
     # Generic tenant/business-scope filter (spec §16), applied as a JSONB
     # containment match against document_chunks.metadata. No concrete
     # business-metadata schema exists yet, so this stays a plain dict
