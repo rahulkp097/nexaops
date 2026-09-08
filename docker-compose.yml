@@ -82,6 +82,8 @@ services:
       REDIS_URL: redis://redis:6379
     ports:
       - "8000:8000"
+    volumes:
+      - ai_model_cache:/app/.cache/transformers
     depends_on:
       postgres:
         condition: service_healthy
@@ -132,3 +134,4 @@ volumes:
   postgres_data:
   document_storage:
   model_cache:
+  ai_model_cache:
