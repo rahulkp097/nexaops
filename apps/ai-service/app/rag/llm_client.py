@@ -1,3 +1,5 @@
+import logging
+
 import anthropic
 
 from app.core.config import get_settings
@@ -5,6 +7,8 @@ from app.rag.errors import LlmRequestError, LlmUnavailableError
 
 # Spec §42: "Keep AI provider code behind an abstraction." This is the only
 # module allowed to import the anthropic SDK directly.
+
+logger = logging.getLogger(__name__)
 
 _REFUSAL_ANSWER = "I'm not able to answer that question based on the available evidence."
 
@@ -40,16 +44,24 @@ async def generate_answer(system: str, user_content: str, max_tokens: int) -> st
             output_config={"effort": "low"},
         )
     except anthropic.AuthenticationError as exc:
+        logger.warning("AI provider rejected the API key: %s", exc)
         raise LlmRequestError("AI provider rejected the API key") from exc
     except anthropic.NotFoundError as exc:
+        logger.warning("AI provider model not found (%s): %s", settings.ai_model, exc)
         raise LlmRequestError(f"AI provider model not found: {settings.ai_model}") from exc
     except anthropic.RateLimitError as exc:
+        logger.warning("AI provider rate limit exceeded: %s", exc)
         raise LlmUnavailableError("AI provider rate limit exceeded") from exc
     except anthropic.APIStatusError as exc:
+        # exc's string form includes the provider's own error message (e.g.
+        # "credit balance too low", "invalid model") — the only place that
+        # detail is available, so always log it rather than just the code.
+        logger.warning("AI provider request rejected (%s): %s", exc.status_code, exc)
         if exc.status_code >= 500:
             raise LlmUnavailableError(f"AI provider server error ({exc.status_code})") from exc
         raise LlmRequestError(f"AI provider request rejected ({exc.status_code})") from exc
     except anthropic.APIConnectionError as exc:
+        logger.warning("Could not reach AI provider: %s", exc)
         raise LlmUnavailableError("Could not reach AI provider") from exc
 
     if response.stop_reason == "refusal":
