@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
+import { ConversationsModule } from './conversations/conversations.module';
 import { DatabaseModule } from './database/database.module';
 import { DocumentsModule } from './documents/documents.module';
 import { HealthModule } from './health/health.module';
@@ -18,6 +19,7 @@ import { UsersModule } from './users/users.module';
     AuditModule,
     AuthModule,
     DocumentsModule,
+    ConversationsModule,
   ],
 })
 export class AppModule {}

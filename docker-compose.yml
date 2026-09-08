@@ -59,6 +59,7 @@ services:
       DATABASE_APP_URL: postgresql://nexaops_app:${DB_APP_PASSWORD}@postgres:5432/nexaops
       REDIS_URL: redis://redis:6379
       RABBITMQ_URL: amqp://nexaops:nexaops@rabbitmq:5672
+      AI_SERVICE_URL: http://ai-service:8000
     ports:
       - "4000:4000"
     volumes:

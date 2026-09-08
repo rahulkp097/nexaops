@@ -1,9 +1,10 @@
 import logging
+from collections.abc import AsyncIterator
 
 import anthropic
 
 from app.core.config import get_settings
-from app.rag.errors import LlmRequestError, LlmUnavailableError
+from app.rag.errors import LlmRequestError, LlmUnavailableError, RagServiceError
 
 # Spec §42: "Keep AI provider code behind an abstraction." This is the only
 # module allowed to import the anthropic SDK directly.
@@ -22,7 +23,7 @@ def _get_client() -> anthropic.AsyncAnthropic:
     return _client
 
 
-async def generate_answer(system: str, user_content: str, max_tokens: int) -> str:
+def _check_configured() -> None:
     settings = get_settings()
     if settings.ai_provider != "anthropic":
         raise LlmRequestError(f"Unsupported AI provider: {settings.ai_provider!r}")
@@ -33,38 +34,80 @@ async def generate_answer(system: str, user_content: str, max_tokens: int) -> st
         # instead, with a clear diagnostic.
         raise LlmRequestError("AI_API_KEY is not configured")
 
-    try:
-        response = await _get_client().messages.create(
-            model=settings.ai_model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user_content}],
-            # Bounded factual Q&A over a handful of short chunks doesn't
-            # benefit from the model's higher default reasoning effort.
-            output_config={"effort": "low"},
-        )
-    except anthropic.AuthenticationError as exc:
+
+def _map_error(exc: anthropic.APIError, model: str) -> RagServiceError:
+    # Order matters: AuthenticationError/NotFoundError/RateLimitError are
+    # all subclasses of APIStatusError, so they're checked first.
+    if isinstance(exc, anthropic.AuthenticationError):
         logger.warning("AI provider rejected the API key: %s", exc)
-        raise LlmRequestError("AI provider rejected the API key") from exc
-    except anthropic.NotFoundError as exc:
-        logger.warning("AI provider model not found (%s): %s", settings.ai_model, exc)
-        raise LlmRequestError(f"AI provider model not found: {settings.ai_model}") from exc
-    except anthropic.RateLimitError as exc:
+        return LlmRequestError("AI provider rejected the API key")
+    if isinstance(exc, anthropic.NotFoundError):
+        logger.warning("AI provider model not found (%s): %s", model, exc)
+        return LlmRequestError(f"AI provider model not found: {model}")
+    if isinstance(exc, anthropic.RateLimitError):
         logger.warning("AI provider rate limit exceeded: %s", exc)
-        raise LlmUnavailableError("AI provider rate limit exceeded") from exc
-    except anthropic.APIStatusError as exc:
+        return LlmUnavailableError("AI provider rate limit exceeded")
+    if isinstance(exc, anthropic.APIStatusError):
         # exc's string form includes the provider's own error message (e.g.
         # "credit balance too low", "invalid model") — the only place that
         # detail is available, so always log it rather than just the code.
         logger.warning("AI provider request rejected (%s): %s", exc.status_code, exc)
         if exc.status_code >= 500:
-            raise LlmUnavailableError(f"AI provider server error ({exc.status_code})") from exc
-        raise LlmRequestError(f"AI provider request rejected ({exc.status_code})") from exc
-    except anthropic.APIConnectionError as exc:
-        logger.warning("Could not reach AI provider: %s", exc)
-        raise LlmUnavailableError("Could not reach AI provider") from exc
+            return LlmUnavailableError(f"AI provider server error ({exc.status_code})")
+        return LlmRequestError(f"AI provider request rejected ({exc.status_code})")
+    logger.warning("Could not reach AI provider: %s", exc)
+    return LlmUnavailableError("Could not reach AI provider")
+
+
+async def generate_answer(system: str, messages: list[dict[str, str]], max_tokens: int) -> str:
+    _check_configured()
+    settings = get_settings()
+
+    try:
+        response = await _get_client().messages.create(
+            model=settings.ai_model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=messages,
+            # Bounded factual Q&A over a handful of short chunks doesn't
+            # benefit from the model's higher default reasoning effort.
+            output_config={"effort": "low"},
+        )
+    except anthropic.APIError as exc:
+        raise _map_error(exc, settings.ai_model) from exc
 
     if response.stop_reason == "refusal":
         return _REFUSAL_ANSWER
 
     return "".join(block.text for block in response.content if block.type == "text").strip()
+
+
+async def stream_answer(
+    system: str, messages: list[dict[str, str]], max_tokens: int
+) -> AsyncIterator[str]:
+    """Yields text deltas as they arrive. A "refusal" stop reason is only
+    turned into `_REFUSAL_ANSWER` when nothing was streamed yet — once
+    partial text has already reached the caller there is no way to retract
+    it, so it is left standing rather than appending a contradictory
+    fallback."""
+    _check_configured()
+    settings = get_settings()
+
+    yielded_any = False
+    try:
+        async with _get_client().messages.stream(
+            model=settings.ai_model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=messages,
+            output_config={"effort": "low"},
+        ) as stream:
+            async for text in stream.text_stream:
+                yielded_any = True
+                yield text
+            final_message = await stream.get_final_message()
+    except anthropic.APIError as exc:
+        raise _map_error(exc, settings.ai_model) from exc
+
+    if final_message.stop_reason == "refusal" and not yielded_any:
+        yield _REFUSAL_ANSWER

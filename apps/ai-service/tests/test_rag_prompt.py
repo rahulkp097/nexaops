@@ -1,7 +1,8 @@
 from uuid import uuid4
 
-from app.rag.prompt import build_system_prompt, build_user_content
+from app.rag.prompt import build_messages, build_system_prompt, build_user_content
 from app.rag.retrieval import RetrievedChunk
+from app.rag.schemas import HistoryMessageDto
 
 
 def test_system_prompt_requires_treating_evidence_as_untrusted():
@@ -50,3 +51,29 @@ def test_user_content_with_chunks_includes_each_chunk_as_evidence():
     assert "page: n/a" in content
     assert "Refunds are issued within 30 days." in content
     assert "Damaged goods qualify for a full refund." in content
+
+
+def test_build_messages_with_no_history_has_a_single_user_turn():
+    messages = build_messages([], "What is the refund policy?", [])
+
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+    assert "What is the refund policy?" in messages[0]["content"]
+
+
+def test_build_messages_prepends_history_turns_as_is():
+    history = [
+        HistoryMessageDto(role="user", content="Hi there"),
+        HistoryMessageDto(role="assistant", content="Hello! How can I help?"),
+    ]
+
+    messages = build_messages(history, "What is the refund policy?", [])
+
+    assert messages[0] == {"role": "user", "content": "Hi there"}
+    assert messages[1] == {"role": "assistant", "content": "Hello! How can I help?"}
+    assert messages[2]["role"] == "user"
+    assert "What is the refund policy?" in messages[2]["content"]
+    # Evidence is only ever attached to the current turn, never retrofitted
+    # onto history.
+    assert "Evidence:" not in messages[0]["content"]
+    assert "Evidence:" not in messages[1]["content"]

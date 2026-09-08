@@ -1,4 +1,5 @@
 from app.rag.retrieval import RetrievedChunk
+from app.rag.schemas import HistoryMessageDto
 
 SYSTEM_PROMPT = """You are the NexaOps knowledge assistant. Answer the user's question using \
 only the evidence blocks provided after the question. Follow these rules exactly:
@@ -32,3 +33,14 @@ def build_user_content(question: str, chunks: list[RetrievedChunk]) -> str:
             for i, chunk in enumerate(chunks, start=1)
         )
     return f"Question: {question}\n\nEvidence:\n{evidence}"
+
+
+def build_messages(
+    history: list[HistoryMessageDto], question: str, chunks: list[RetrievedChunk]
+) -> list[dict[str, str]]:
+    """Prior turns as-is, then the current question with its evidence block
+    appended as the final user turn — evidence is scoped to this turn only,
+    never retroactively attached to earlier history."""
+    return [{"role": turn.role, "content": turn.content} for turn in history] + [
+        {"role": "user", "content": build_user_content(question, chunks)}
+    ]
