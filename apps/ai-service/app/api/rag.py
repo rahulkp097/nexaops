@@ -16,7 +16,7 @@ router = APIRouter(prefix="/rag", tags=["rag"])
 @router.post("/query", response_model=RagQueryResponse)
 async def query(payload: RagQueryRequest) -> RagQueryResponse:
     try:
-        return await run_rag_query(payload.question, payload.organization_id)
+        return await run_rag_query(payload.question, payload.organization_id, payload.metadata_filter)
     except LlmUnavailableError as exc:
         raise HTTPException(status_code=503, detail="AI provider temporarily unavailable") from exc
     except LlmRequestError as exc:

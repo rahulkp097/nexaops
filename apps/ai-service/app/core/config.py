@@ -21,6 +21,9 @@ class Settings(BaseSettings):
 
     rag_top_k: int = 8
     rag_max_answer_tokens: int = 2048
+    # Each of vector/keyword search fetches this many candidates before
+    # RRF fuses and trims down to rag_top_k (Phase 7 hybrid retrieval).
+    rag_candidate_pool_size: int = 20
 
 
 @lru_cache
