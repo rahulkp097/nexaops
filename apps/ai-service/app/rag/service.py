@@ -1,3 +1,4 @@
+from typing import Any
 from uuid import UUID
 
 from app.core.config import get_settings
@@ -8,11 +9,22 @@ from app.rag.retrieval import retrieve_top_chunks
 from app.rag.schemas import RagQueryResponse, SourceDto
 
 
-async def run_rag_query(question: str, organization_id: UUID) -> RagQueryResponse:
+async def run_rag_query(
+    question: str,
+    organization_id: UUID,
+    metadata_filter: dict[str, Any] | None = None,
+) -> RagQueryResponse:
     settings = get_settings()
 
     query_embedding = await embed_query(question)
-    chunks = await retrieve_top_chunks(organization_id, query_embedding, settings.rag_top_k)
+    chunks = await retrieve_top_chunks(
+        organization_id,
+        question,
+        query_embedding,
+        top_k=settings.rag_top_k,
+        candidate_pool_size=settings.rag_candidate_pool_size,
+        metadata_filter=metadata_filter,
+    )
 
     # The LLM is always called, even with zero retrieved chunks: an
     # LLM-authored "insufficient evidence" admission (spec §15/§38) is

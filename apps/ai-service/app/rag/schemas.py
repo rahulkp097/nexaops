@@ -1,3 +1,4 @@
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,6 +16,11 @@ class CamelModel(BaseModel):
 class RagQueryRequest(CamelModel):
     question: str = Field(..., min_length=1, max_length=2000)
     organization_id: UUID
+    # Generic tenant/business-scope filter (spec §16), applied as a JSONB
+    # containment match against document_chunks.metadata. No concrete
+    # business-metadata schema exists yet, so this stays a plain dict
+    # rather than a speculative filter DSL.
+    metadata_filter: dict[str, Any] | None = None
 
 
 class SourceDto(CamelModel):
