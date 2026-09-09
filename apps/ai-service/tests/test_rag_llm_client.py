@@ -33,7 +33,28 @@ async def test_unsupported_provider_raises_llm_request_error():
 
 
 def _mock_settings():
-    return MagicMock(ai_provider="anthropic", ai_api_key="sk-test", ai_model="claude-sonnet-5")
+    return MagicMock(
+        ai_provider="anthropic",
+        ai_api_key="sk-test",
+        ai_model="claude-sonnet-5",
+        ai_request_timeout_seconds=60.0,
+        ai_max_retries=2,
+    )
+
+
+async def test_client_is_constructed_with_an_explicit_timeout_and_retry_count():
+    with patch("app.rag.llm_client.get_settings", return_value=_mock_settings()):
+        with patch("app.rag.llm_client.anthropic.AsyncAnthropic") as mock_client_cls:
+            mock_response = MagicMock(
+                stop_reason="end_turn", content=[_mock_text_block("hi")], usage=MagicMock(input_tokens=1, output_tokens=1)
+            )
+            mock_client = MagicMock()
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            await create_message("system", [{"role": "user", "content": "q"}], max_tokens=100)
+
+            mock_client_cls.assert_called_once_with(api_key="sk-test", timeout=60.0, max_retries=2)
 
 
 async def test_rate_limit_error_maps_to_llm_unavailable():

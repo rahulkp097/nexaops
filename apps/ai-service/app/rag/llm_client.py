@@ -49,7 +49,12 @@ class MessageResult:
 def _get_client() -> anthropic.AsyncAnthropic:
     global _client
     if _client is None:
-        _client = anthropic.AsyncAnthropic(api_key=get_settings().ai_api_key)
+        settings = get_settings()
+        _client = anthropic.AsyncAnthropic(
+            api_key=settings.ai_api_key,
+            timeout=settings.ai_request_timeout_seconds,
+            max_retries=settings.ai_max_retries,
+        )
     return _client
 
 

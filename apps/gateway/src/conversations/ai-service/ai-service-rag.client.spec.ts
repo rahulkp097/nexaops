@@ -62,6 +62,7 @@ describe('AiServiceRagClient', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: 'q', organizationId: 'org-1', history: [] }),
+        signal: expect.any(AbortSignal),
       }),
     );
     expect(events).toEqual([

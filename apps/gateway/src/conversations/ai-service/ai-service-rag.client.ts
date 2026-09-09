@@ -40,6 +40,14 @@ export type RagStreamEvent =
   | { event: 'done'; data: RagDoneEventData }
   | { event: 'error'; data: RagErrorEventData };
 
+// Phase 19 (spec §28: "Timeouts on external/model calls"): generous
+// because this measures total time since the request started, including
+// however long token generation actually takes — not idle time between
+// chunks — but still bounded, so a hung ai-service connection fails
+// loudly instead of leaving the request (and the chat-stream slot it
+// holds) open indefinitely.
+const RAG_REQUEST_TIMEOUT_MS = 120_000;
+
 @Injectable()
 export class AiServiceRagClient {
   constructor(
@@ -69,6 +77,7 @@ export class AiServiceRagClient {
         history: input.history,
         conversationSummary: input.conversationSummary ?? undefined,
       }),
+      signal: AbortSignal.timeout(RAG_REQUEST_TIMEOUT_MS),
     });
 
     if (!response.ok) {

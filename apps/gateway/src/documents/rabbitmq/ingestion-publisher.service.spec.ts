@@ -11,10 +11,16 @@ describe('IngestionPublisher', () => {
   let publisher: IngestionPublisher;
   const config = { get: jest.fn().mockReturnValue('amqp://test') } as unknown as ConfigService;
 
-  function makeChannel() {
+  // Defaults to immediately confirming every publish (as if the broker
+  // acked it) — makeChannel({ confirmError: new Error(...) }) instead
+  // simulates a publish the broker never confirmed.
+  function makeChannel(options: { confirmError?: Error } = {}) {
     return {
       assertExchange: jest.fn().mockResolvedValue(undefined),
-      publish: jest.fn(),
+      publish: jest.fn((_exchange, _routingKey, _content, _options, callback?: (err: Error | null) => void) => {
+        callback?.(options.confirmError ?? null);
+        return true;
+      }),
       once: jest.fn(),
     };
   }
@@ -26,7 +32,7 @@ describe('IngestionPublisher', () => {
 
   it('publishes to the ingestion exchange with a persistent, JSON message carrying messageId', async () => {
     const channel = makeChannel();
-    mockConnect.mockResolvedValue({ createChannel: jest.fn().mockResolvedValue(channel), close: jest.fn() });
+    mockConnect.mockResolvedValue({ createConfirmChannel: jest.fn().mockResolvedValue(channel), close: jest.fn() });
 
     await publisher.publishIngestionJob({ documentId: 'doc-1', organizationId: 'org-1' });
 
@@ -44,7 +50,7 @@ describe('IngestionPublisher', () => {
 
   it('reuses the same channel (asserts the exchange only once) across multiple publishes', async () => {
     const channel = makeChannel();
-    mockConnect.mockResolvedValue({ createChannel: jest.fn().mockResolvedValue(channel), close: jest.fn() });
+    mockConnect.mockResolvedValue({ createConfirmChannel: jest.fn().mockResolvedValue(channel), close: jest.fn() });
 
     await publisher.publishIngestionJob({ documentId: 'doc-1', organizationId: 'org-1' });
     await publisher.publishIngestionJob({ documentId: 'doc-2', organizationId: 'org-1' });
@@ -55,7 +61,7 @@ describe('IngestionPublisher', () => {
 
   it('mints a distinct jobId (messageId) per publish call', async () => {
     const channel = makeChannel();
-    mockConnect.mockResolvedValue({ createChannel: jest.fn().mockResolvedValue(channel), close: jest.fn() });
+    mockConnect.mockResolvedValue({ createConfirmChannel: jest.fn().mockResolvedValue(channel), close: jest.fn() });
 
     await publisher.publishIngestionJob({ documentId: 'doc-1', organizationId: 'org-1' });
     await publisher.publishIngestionJob({ documentId: 'doc-1', organizationId: 'org-1' });
@@ -73,11 +79,20 @@ describe('IngestionPublisher', () => {
     ).rejects.toThrow('connection refused');
 
     const channel = makeChannel();
-    mockConnect.mockResolvedValueOnce({ createChannel: jest.fn().mockResolvedValue(channel), close: jest.fn() });
+    mockConnect.mockResolvedValueOnce({ createConfirmChannel: jest.fn().mockResolvedValue(channel), close: jest.fn() });
 
     await publisher.publishIngestionJob({ documentId: 'doc-1', organizationId: 'org-1' });
 
     expect(mockConnect).toHaveBeenCalledTimes(2);
     expect(channel.publish).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects when the broker never confirms the publish', async () => {
+    const channel = makeChannel({ confirmError: new Error('channel closed') });
+    mockConnect.mockResolvedValue({ createConfirmChannel: jest.fn().mockResolvedValue(channel), close: jest.fn() });
+
+    await expect(
+      publisher.publishIngestionJob({ documentId: 'doc-1', organizationId: 'org-1' }),
+    ).rejects.toThrow('channel closed');
   });
 });
