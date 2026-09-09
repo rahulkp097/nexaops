@@ -2,6 +2,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.cache import build_cache_key, get_cached, set_cached
+from app.core.config import get_settings
 from app.tools import business_client
 from app.tools.business_client import MockBusinessNotFoundError
 from app.tools.registry import ToolRegistry
@@ -77,7 +79,25 @@ class QuerySalesInput(BaseModel):
     to_date: str | None = Field(None, pattern=_DATE_PATTERN, description=_DATE_DESC_TO)
 
 
-async def _query_sales(input_model: QuerySalesInput, _context: ToolContext) -> dict[str, Any]:
+async def _query_sales(input_model: QuerySalesInput, context: ToolContext) -> dict[str, Any]:
+    # Phase 20 (spec §29: "Cache safe, repeatable retrieval/analytics
+    # results where useful"). Keyed by organization even though
+    # mock-business's data is identical for every org today (spec's "do not
+    # cache across organizations" is a blanket rule, not conditioned on
+    # whether today's backend happens to be multi-tenant) — see
+    # app.core.cache.build_cache_key.
+    cache_key = build_cache_key(
+        context.organization_id,
+        "analytics",
+        "query_sales",
+        input_model.status or "-",
+        input_model.from_date or "-",
+        input_model.to_date or "-",
+    )
+    cached = await get_cached(cache_key)
+    if cached is not None:
+        return cached
+
     orders = await business_client.list_orders(input_model.status, input_model.from_date, input_model.to_date)
     summarized = [
         {
@@ -89,7 +109,9 @@ async def _query_sales(input_model: QuerySalesInput, _context: ToolContext) -> d
         }
         for order in orders
     ]
-    return {"orders": summarized, "count": len(summarized)}
+    result = {"orders": summarized, "count": len(summarized)}
+    await set_cached(cache_key, result, get_settings().cache_ttl_seconds)
+    return result
 
 
 Metric = Literal["total_revenue", "average_order_value", "order_count", "delayed_order_count"]
@@ -101,7 +123,20 @@ class CalculateMetricInput(BaseModel):
     to_date: str | None = Field(None, pattern=_DATE_PATTERN, description=_DATE_DESC_TO)
 
 
-async def _calculate_metric(input_model: CalculateMetricInput, _context: ToolContext) -> dict[str, Any]:
+async def _calculate_metric(input_model: CalculateMetricInput, context: ToolContext) -> dict[str, Any]:
+    # spec §29's own example key shape is exactly this metric:
+    # org:{orgId}:analytics:revenue:{from}:{to}.
+    cache_key = build_cache_key(
+        context.organization_id,
+        "analytics",
+        input_model.metric,
+        input_model.from_date or "-",
+        input_model.to_date or "-",
+    )
+    cached = await get_cached(cache_key)
+    if cached is not None:
+        return cached
+
     if input_model.metric == "delayed_order_count":
         orders = await business_client.list_orders("DELAYED", input_model.from_date, input_model.to_date)
         value: float = len(orders)
@@ -112,7 +147,10 @@ async def _calculate_metric(input_model: CalculateMetricInput, _context: ToolCon
             "average_order_value": analytics["averageOrderValue"],
             "order_count": analytics["orderCount"],
         }[input_model.metric]
-    return {"metric": input_model.metric, "value": value, "from": input_model.from_date, "to": input_model.to_date}
+
+    result = {"metric": input_model.metric, "value": value, "from": input_model.from_date, "to": input_model.to_date}
+    await set_cached(cache_key, result, get_settings().cache_ttl_seconds)
+    return result
 
 
 def register_all(target: ToolRegistry) -> None:

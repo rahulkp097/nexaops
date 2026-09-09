@@ -22,9 +22,9 @@ class RunSalesQueryInput(BaseModel):
     )
 
 
-async def _run_sales_query(input_model: RunSalesQueryInput, _context: ToolContext) -> dict[str, Any]:
+async def _run_sales_query(input_model: RunSalesQueryInput, context: ToolContext) -> dict[str, Any]:
     try:
-        result = await run_sales_query(input_model.question)
+        result = await run_sales_query(input_model.question, context.organization_id)
     except SqlToolError as exc:
         # A controlled failure (spec §21) is a normal result for the model
         # to see and react to, not a tool-execution error — same reasoning

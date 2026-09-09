@@ -25,3 +25,9 @@ async def check_redis() -> None:
     if _client is None:
         raise RuntimeError("Redis client is not initialized")
     await _client.ping()
+
+
+def get_redis_client() -> Redis:
+    if _client is None:
+        raise RuntimeError("Redis client is not initialized")
+    return _client
