@@ -12,6 +12,7 @@ import { Observable, ReplaySubject } from 'rxjs';
 import { RequestUser } from '../auth/types/request-user.type';
 import { PG_POOL } from '../database/pg-pool.provider';
 import { withTransaction } from '../database/transaction.util';
+import { AiServiceMemoryClient } from './ai-service/ai-service-memory.client';
 import { AiServiceRagClient, RagHistoryMessage, RagSourceEventData } from './ai-service/ai-service-rag.client';
 import { ChatStreamRegistry } from './chat-stream.registry';
 import { CONVERSATION_HISTORY_LIMIT } from './conversations.constants';
@@ -28,6 +29,7 @@ export class ConversationsService {
     @Inject(PG_POOL) private readonly pool: Pool,
     private readonly conversationsRepository: ConversationsRepository,
     private readonly aiServiceRagClient: AiServiceRagClient,
+    private readonly aiServiceMemoryClient: AiServiceMemoryClient,
     private readonly chatStreamRegistry: ChatStreamRegistry,
   ) {}
 
@@ -77,13 +79,15 @@ export class ConversationsService {
     }
 
     let history: MessageRow[];
+    let conversationSummary: string | null;
     let userMessage: MessageRow;
     try {
-      // Fetched before inserting the new message, so it naturally excludes it.
+      // Fetched before inserting the new message, so both naturally exclude it.
       history = await this.conversationsRepository.listRecentByConversation(
         conversationId,
         CONVERSATION_HISTORY_LIMIT,
       );
+      conversationSummary = await this.maybeUpdateSummary(conversation);
       userMessage = await withTransaction(this.pool, async (client) => {
         const message = await this.conversationsRepository.createMessage(
           { id: randomUUID(), conversationId, role: 'USER', content },
@@ -98,12 +102,14 @@ export class ConversationsService {
     }
 
     const assistantMessageId = randomUUID();
-    this.runAssistantResponse(conversation, subject, assistantMessageId, content, history).catch((error) => {
-      this.logger.error(
-        `Unhandled error generating an assistant response for conversation ${conversationId}`,
-        error instanceof Error ? error.stack : String(error),
-      );
-    });
+    this.runAssistantResponse(conversation, subject, assistantMessageId, content, history, conversationSummary).catch(
+      (error) => {
+        this.logger.error(
+          `Unhandled error generating an assistant response for conversation ${conversationId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      },
+    );
 
     return toMessageResponseDto(userMessage);
   }
@@ -125,12 +131,54 @@ export class ConversationsService {
     return conversation;
   }
 
+  // Phase 16 (spec §25): "Summarize older context when conversations become
+  // long." Only the slice of messages that has newly aged out of the
+  // bounded recent-message window since the last summarization is folded
+  // in — not the whole conversation each time. Summarization is a
+  // best-effort enhancement: if the AI service call fails (including the
+  // known zero-credit-balance gap), the conversation falls back to its
+  // last-known summary so an outage here never blocks sending a message.
+  private async maybeUpdateSummary(conversation: ConversationRow): Promise<string | null> {
+    const totalMessages = await this.conversationsRepository.countMessagesByConversation(conversation.id);
+    const olderCount = totalMessages - CONVERSATION_HISTORY_LIMIT;
+    if (olderCount <= conversation.summarized_message_count) {
+      return conversation.summary;
+    }
+
+    const newlyAgedOut = await this.conversationsRepository.listMessageRange(
+      conversation.id,
+      conversation.summarized_message_count,
+      olderCount - conversation.summarized_message_count,
+    );
+    if (newlyAgedOut.length === 0) {
+      return conversation.summary;
+    }
+
+    try {
+      const summary = await this.aiServiceMemoryClient.summarize({
+        previousSummary: conversation.summary,
+        messages: newlyAgedOut.map((row) => ({
+          role: row.role === 'USER' ? ('user' as const) : ('assistant' as const),
+          content: row.content,
+        })),
+      });
+      await this.conversationsRepository.updateSummary(conversation.id, summary, olderCount);
+      return summary;
+    } catch (error) {
+      this.logger.warn(
+        `Skipping conversation summary update for ${conversation.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return conversation.summary;
+    }
+  }
+
   private async runAssistantResponse(
     conversation: ConversationRow,
     subject: ReplaySubject<MessageEvent>,
     assistantMessageId: string,
     question: string,
     history: MessageRow[],
+    conversationSummary: string | null,
   ): Promise<void> {
     this.chatStreamRegistry.emit(subject, 'message_start', {
       conversationId: conversation.id,
@@ -152,6 +200,7 @@ export class ConversationsService {
         question,
         organizationId: conversation.organization_id,
         history: ragHistory,
+        conversationSummary,
       })) {
         if (event.event === 'source') {
           sources.push(event.data);

@@ -12,6 +12,10 @@ class AgentRunRequest(CamelModel):
     user_id: UUID
     role: Literal["ADMIN", "MANAGER", "EMPLOYEE"]
     history: list[HistoryMessageDto] = []
+    # Phase 16: a rolling summary of turns older than `history`'s window,
+    # maintained by the gateway. None until a conversation is long enough
+    # to have any summarized turns.
+    conversation_summary: str | None = None
 
 
 class ToolCallTraceDto(CamelModel):

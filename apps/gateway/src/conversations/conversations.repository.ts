@@ -104,6 +104,44 @@ export class ConversationsRepository {
     return result.rows;
   }
 
+  async countMessagesByConversation(conversationId: string, queryable: Queryable = this.pool): Promise<number> {
+    const result = await queryable.query<{ count: string }>(
+      'SELECT COUNT(*) AS count FROM messages WHERE conversation_id = $1',
+      [conversationId],
+    );
+    return Number(result.rows[0].count);
+  }
+
+  // Oldest-first, paged by offset/limit — used to fetch exactly the slice of
+  // messages that has newly aged out of the recent-message window since the
+  // last summarization (Phase 16), never the whole conversation.
+  async listMessageRange(
+    conversationId: string,
+    offset: number,
+    limit: number,
+    queryable: Queryable = this.pool,
+  ): Promise<MessageRow[]> {
+    const result = await queryable.query<MessageRow>(
+      `SELECT * FROM messages WHERE conversation_id = $1
+       ORDER BY created_at ASC
+       OFFSET $2 LIMIT $3`,
+      [conversationId, offset, limit],
+    );
+    return result.rows;
+  }
+
+  async updateSummary(
+    conversationId: string,
+    summary: string,
+    summarizedMessageCount: number,
+    queryable: Queryable = this.pool,
+  ): Promise<void> {
+    await queryable.query(
+      'UPDATE conversations SET summary = $2, summarized_message_count = $3 WHERE id = $1',
+      [conversationId, summary, summarizedMessageCount],
+    );
+  }
+
   async createMessageSources(
     inputs: CreateMessageSourceInput[],
     queryable: Queryable = this.pool,

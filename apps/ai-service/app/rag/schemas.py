@@ -12,6 +12,10 @@ class RagQueryRequest(CamelModel):
     # Prior turns of the same conversation, oldest first, excluding
     # `question` itself. Empty for a conversation's first message.
     history: list[HistoryMessageDto] = []
+    # Phase 16: a rolling summary of turns older than `history`'s window,
+    # maintained by the gateway. None until a conversation is long enough
+    # to have any summarized turns.
+    conversation_summary: str | None = None
     # Generic tenant/business-scope filter (spec §16), applied as a JSONB
     # containment match against document_chunks.metadata. No concrete
     # business-metadata schema exists yet, so this stays a plain dict

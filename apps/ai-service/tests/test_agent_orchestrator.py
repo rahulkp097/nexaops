@@ -67,6 +67,18 @@ async def test_history_is_prepended_before_the_new_question():
     assert messages[2] == {"role": "user", "content": "Follow-up?"}
 
 
+async def test_conversation_summary_is_forwarded_into_the_system_prompt():
+    with patch("app.agents.orchestrator.create_message", new_callable=AsyncMock) as mock_create:
+        mock_create.return_value = _text_result("ok")
+
+        await run_agent(
+            "Follow-up?", _context(), conversation_summary="The user previously asked about order 10291."
+        )
+
+    system_prompt = mock_create.call_args.kwargs["system"]
+    assert "The user previously asked about order 10291." in system_prompt
+
+
 async def test_executes_a_requested_tool_and_feeds_the_result_back():
     with patch("app.agents.orchestrator.create_message", new_callable=AsyncMock) as mock_create, patch.object(
         registry, "execute", new_callable=AsyncMock

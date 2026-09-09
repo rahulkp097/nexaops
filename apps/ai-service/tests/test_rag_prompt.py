@@ -70,6 +70,20 @@ def test_build_messages_with_no_history_has_a_single_user_turn():
     assert "What is the refund policy?" in messages[0]["content"]
 
 
+def test_system_prompt_without_a_conversation_summary_is_unchanged():
+    assert build_system_prompt(None) == build_system_prompt()
+
+
+def test_system_prompt_with_a_conversation_summary_includes_it_delimited():
+    prompt = build_system_prompt("The user previously asked about order 10291, which is delayed.")
+
+    assert "<conversation_summary>" in prompt
+    assert "order 10291" in prompt
+    assert "</conversation_summary>" in prompt
+    # The original rules are still present, not replaced.
+    assert "untrusted" in prompt.lower()
+
+
 def test_build_messages_prepends_history_turns_as_is():
     history = [
         HistoryMessageDto(role="user", content="Hi there"),

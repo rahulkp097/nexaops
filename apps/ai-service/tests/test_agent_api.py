@@ -148,3 +148,30 @@ def test_run_forwards_history_and_context_to_the_orchestrator(mock_run_agent, *_
     assert args[1].organization_id == org_id
     assert args[1].role == "EMPLOYEE"
     assert args[2][0].content == "Hi"
+
+
+@patch("app.main.init_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_redis_client", new_callable=AsyncMock)
+@patch("app.main.close_redis_client", new_callable=AsyncMock)
+@patch("app.main.init_embedding_model", new_callable=AsyncMock)
+@patch("app.api.agent.run_agent", new_callable=AsyncMock)
+def test_run_forwards_conversation_summary_to_the_orchestrator(mock_run_agent, *_mocks):
+    mock_run_agent.return_value = AgentRunResult(answer="ok", tool_calls=[], iterations=1, stopped_reason="end_turn")
+
+    with TestClient(app) as client:
+        client.post(
+            "/agent/run",
+            json={
+                "question": "Follow-up?",
+                "organizationId": str(uuid4()),
+                "userId": str(uuid4()),
+                "role": "EMPLOYEE",
+                "conversationSummary": "The user previously asked about order 10291.",
+            },
+        )
+
+    args = mock_run_agent.call_args.args
+    assert args[3] == "The user previously asked about order 10291."

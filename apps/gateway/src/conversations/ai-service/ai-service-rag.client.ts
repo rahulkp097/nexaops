@@ -50,6 +50,9 @@ export class AiServiceRagClient {
     question: string;
     organizationId: string;
     history: RagHistoryMessage[];
+    // Phase 16: a rolling summary of turns older than `history`'s window,
+    // omitted (rather than sent as null) until a conversation has any.
+    conversationSummary?: string | null;
   }): AsyncGenerator<RagStreamEvent> {
     const baseUrl = this.config.get<string>('AI_SERVICE_URL') ?? 'http://localhost:8000';
     const response = await fetch(`${baseUrl}/rag/query/stream`, {
@@ -59,6 +62,7 @@ export class AiServiceRagClient {
         question: input.question,
         organizationId: input.organizationId,
         history: input.history,
+        conversationSummary: input.conversationSummary ?? undefined,
       }),
     });
 

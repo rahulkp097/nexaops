@@ -47,6 +47,7 @@ async def run_rag_query(
     organization_id: UUID,
     history: list[HistoryMessageDto] | None = None,
     metadata_filter: dict[str, Any] | None = None,
+    conversation_summary: str | None = None,
 ) -> RagQueryResponse:
     settings = get_settings()
     chunks, sources = await _retrieve_context(question, organization_id, metadata_filter)
@@ -56,7 +57,7 @@ async def run_rag_query(
     # required either way, and a chunk-count check alone can't catch the
     # more common case of irrelevant-but-present chunks.
     answer = await generate_answer(
-        system=build_system_prompt(),
+        system=build_system_prompt(conversation_summary),
         messages=build_messages(history or [], question, chunks),
         max_tokens=settings.rag_max_answer_tokens,
     )
@@ -69,6 +70,7 @@ async def stream_rag_query(
     organization_id: UUID,
     history: list[HistoryMessageDto] | None = None,
     metadata_filter: dict[str, Any] | None = None,
+    conversation_summary: str | None = None,
 ) -> AsyncIterator[RagStreamEvent]:
     """Same pipeline as run_rag_query, as a stream of events instead of one
     blocking result: sources first (retrieval completes before the LLM call
@@ -82,7 +84,9 @@ async def stream_rag_query(
     messages = build_messages(history or [], question, chunks)
     answer_parts: list[str] = []
     async for text in stream_answer(
-        system=build_system_prompt(), messages=messages, max_tokens=settings.rag_max_answer_tokens
+        system=build_system_prompt(conversation_summary),
+        messages=messages,
+        max_tokens=settings.rag_max_answer_tokens,
     ):
         answer_parts.append(text)
         yield RagStreamEvent(event="token", data={"text": text})

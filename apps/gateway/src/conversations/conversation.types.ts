@@ -5,6 +5,14 @@ export interface ConversationRow {
   organization_id: string;
   user_id: string;
   title: string | null;
+  // Phase 16: a rolling summary of messages older than the bounded
+  // recent-message window (CONVERSATION_HISTORY_LIMIT), null until a
+  // conversation is long enough to have any summarized messages.
+  summary: string | null;
+  // How many of this conversation's oldest messages are already folded
+  // into `summary` — lets the next summarization pick up only the newly
+  // aged-out slice instead of resummarizing from scratch.
+  summarized_message_count: number;
   created_at: Date;
   updated_at: Date;
 }

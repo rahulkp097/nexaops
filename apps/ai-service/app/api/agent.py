@@ -15,7 +15,7 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 async def run(payload: AgentRunRequest) -> AgentRunResponse:
     context = ToolContext(organization_id=payload.organization_id, user_id=payload.user_id, role=payload.role)
     try:
-        result = await run_agent(payload.question, context, payload.history)
+        result = await run_agent(payload.question, context, payload.history, payload.conversation_summary)
     except LlmUnavailableError as exc:
         raise HTTPException(status_code=503, detail="AI provider temporarily unavailable") from exc
     except LlmRequestError as exc:

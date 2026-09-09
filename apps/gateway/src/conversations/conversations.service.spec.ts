@@ -2,6 +2,7 @@ import { ConflictException, MessageEvent, NotFoundException } from '@nestjs/comm
 import { Pool } from 'pg';
 import { firstValueFrom, ReplaySubject } from 'rxjs';
 import { toArray } from 'rxjs/operators';
+import { AiServiceMemoryClient } from './ai-service/ai-service-memory.client';
 import { AiServiceRagClient } from './ai-service/ai-service-rag.client';
 import { ChatStreamRegistry } from './chat-stream.registry';
 import { ConversationsRepository } from './conversations.repository';
@@ -23,6 +24,8 @@ describe('ConversationsService', () => {
     organization_id: 'org-1',
     user_id: 'user-1',
     title: 'Refund questions',
+    summary: null,
+    summarized_message_count: 0,
     created_at: new Date(),
     updated_at: new Date(),
   };
@@ -35,6 +38,9 @@ describe('ConversationsService', () => {
       | 'listByOrganizationAndUser'
       | 'listByConversation'
       | 'listRecentByConversation'
+      | 'countMessagesByConversation'
+      | 'listMessageRange'
+      | 'updateSummary'
       | 'createMessage'
       | 'createMessageSources'
       | 'listSourcesByMessageIds'
@@ -42,6 +48,7 @@ describe('ConversationsService', () => {
     >
   >;
   let aiServiceRagClient: jest.Mocked<Pick<AiServiceRagClient, 'streamQuery'>>;
+  let aiServiceMemoryClient: jest.Mocked<Pick<AiServiceMemoryClient, 'summarize'>>;
   let chatStreamRegistry: ChatStreamRegistry;
   let pool: ReturnType<typeof makePool>;
   let service: ConversationsService;
@@ -61,12 +68,18 @@ describe('ConversationsService', () => {
       listByOrganizationAndUser: jest.fn(),
       listByConversation: jest.fn(),
       listRecentByConversation: jest.fn(),
+      // Defaults to "conversation is short, nothing new to summarize" so
+      // existing tests below don't need to know about summarization at all.
+      countMessagesByConversation: jest.fn().mockResolvedValue(0),
+      listMessageRange: jest.fn(),
+      updateSummary: jest.fn(),
       createMessage: jest.fn(),
       createMessageSources: jest.fn(),
       listSourcesByMessageIds: jest.fn(),
       touchUpdatedAt: jest.fn(),
     };
     aiServiceRagClient = { streamQuery: jest.fn() };
+    aiServiceMemoryClient = { summarize: jest.fn() };
     chatStreamRegistry = new ChatStreamRegistry();
     capturedSubject = null;
     jest.spyOn(chatStreamRegistry, 'start').mockImplementation((id: string) => {
@@ -82,6 +95,7 @@ describe('ConversationsService', () => {
       pool.pool,
       conversationsRepository as unknown as ConversationsRepository,
       aiServiceRagClient as unknown as AiServiceRagClient,
+      aiServiceMemoryClient as unknown as AiServiceMemoryClient,
       chatStreamRegistry,
     );
   });
@@ -265,6 +279,7 @@ describe('ConversationsService', () => {
         question: 'What is the refund policy?',
         organizationId: 'org-1',
         history: [{ role: 'user', content: 'Hi' }],
+        conversationSummary: null,
       });
 
       const events = await firstValueFrom(capturedSubject!.pipe(toArray()));
@@ -346,6 +361,104 @@ describe('ConversationsService', () => {
       const events = await firstValueFrom(capturedSubject!.pipe(toArray()));
       expect(events.map((e) => e.type)).toEqual(['message_start', 'error']);
       expect(conversationsRepository.createMessage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('postMessage conversation summary (Phase 16)', () => {
+    function stubHappyPath() {
+      conversationsRepository.createMessage.mockResolvedValueOnce({
+        id: 'msg-user-1',
+        conversation_id: 'conv-1',
+        role: 'USER',
+        content: 'question',
+        model: null,
+        provider: null,
+        created_at: new Date(),
+      });
+      aiServiceRagClient.streamQuery.mockImplementation(async function* () {
+        yield { event: 'done' as const, data: { answer: 'answer', model: 'claude-sonnet-5', provider: 'anthropic' } };
+      });
+    }
+
+    it('does not summarize while the conversation still fits inside the recent-message window', async () => {
+      conversationsRepository.findByIdAndOrganization.mockResolvedValue(conversationRow);
+      conversationsRepository.listRecentByConversation.mockResolvedValue([]);
+      conversationsRepository.countMessagesByConversation.mockResolvedValue(10); // == CONVERSATION_HISTORY_LIMIT
+      stubHappyPath();
+
+      await service.postMessage('conv-1', 'question', user);
+
+      expect(conversationsRepository.listMessageRange).not.toHaveBeenCalled();
+      expect(aiServiceMemoryClient.summarize).not.toHaveBeenCalled();
+      expect(aiServiceRagClient.streamQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationSummary: null }),
+      );
+    });
+
+    it('summarizes only the newly aged-out messages once the conversation grows past the window, and persists the result', async () => {
+      conversationsRepository.findByIdAndOrganization.mockResolvedValue(conversationRow);
+      conversationsRepository.listRecentByConversation.mockResolvedValue([]);
+      conversationsRepository.countMessagesByConversation.mockResolvedValue(11); // one past the limit
+      conversationsRepository.listMessageRange.mockResolvedValue([
+        {
+          id: 'msg-old-1',
+          conversation_id: 'conv-1',
+          role: 'USER',
+          content: 'What is our refund window?',
+          model: null,
+          provider: null,
+          created_at: new Date(),
+        },
+      ]);
+      aiServiceMemoryClient.summarize.mockResolvedValue('The user asked about the refund window.');
+      stubHappyPath();
+
+      await service.postMessage('conv-1', 'question', user);
+
+      expect(conversationsRepository.listMessageRange).toHaveBeenCalledWith('conv-1', 0, 1);
+      expect(aiServiceMemoryClient.summarize).toHaveBeenCalledWith({
+        previousSummary: null,
+        messages: [{ role: 'user', content: 'What is our refund window?' }],
+      });
+      expect(conversationsRepository.updateSummary).toHaveBeenCalledWith(
+        'conv-1',
+        'The user asked about the refund window.',
+        1,
+      );
+      expect(aiServiceRagClient.streamQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationSummary: 'The user asked about the refund window.' }),
+      );
+    });
+
+    it('falls back to the last-known summary and still answers when the AI service summarize call fails', async () => {
+      conversationsRepository.findByIdAndOrganization.mockResolvedValue({
+        ...conversationRow,
+        summary: 'Previously: the user asked about order 10291.',
+      });
+      conversationsRepository.listRecentByConversation.mockResolvedValue([]);
+      conversationsRepository.countMessagesByConversation.mockResolvedValue(11);
+      conversationsRepository.listMessageRange.mockResolvedValue([
+        {
+          id: 'msg-old-1',
+          conversation_id: 'conv-1',
+          role: 'USER',
+          content: 'Anything new?',
+          model: null,
+          provider: null,
+          created_at: new Date(),
+        },
+      ]);
+      aiServiceMemoryClient.summarize.mockRejectedValue(new Error('AI service request failed with status 503'));
+      stubHappyPath();
+
+      await service.postMessage('conv-1', 'question', user);
+
+      expect(conversationsRepository.updateSummary).not.toHaveBeenCalled();
+      expect(aiServiceRagClient.streamQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationSummary: 'Previously: the user asked about order 10291.' }),
+      );
+      // The failed summarization never blocked persisting/answering the message.
+      expect(conversationsRepository.createMessage).toHaveBeenCalled();
     });
   });
 

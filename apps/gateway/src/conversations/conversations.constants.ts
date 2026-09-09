@@ -1,6 +1,7 @@
 // How many prior messages (Phase 8's "retrieve relevant history") are sent
-// to ai-service as multi-turn context. Summarizing longer history instead of
-// just truncating it is Phase 16's job (Conversation Memory).
+// to ai-service verbatim as multi-turn context. Anything older than this
+// window is folded into conversations.summary instead of being dropped
+// (Phase 16, ConversationsService.maybeUpdateSummary).
 export const CONVERSATION_HISTORY_LIMIT = 10;
 
 // Matches RagQueryRequest.question's max_length in

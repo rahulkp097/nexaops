@@ -132,6 +132,24 @@ async def test_run_rag_query_forwards_history_and_question_as_messages(
     assert "Follow-up question?" in messages[2]["content"]
 
 
+@patch("app.rag.service.generate_answer", new_callable=AsyncMock)
+@patch("app.rag.service.retrieve_top_chunks", new_callable=AsyncMock)
+@patch("app.rag.service.embed_query", new_callable=AsyncMock)
+async def test_run_rag_query_forwards_conversation_summary_into_the_system_prompt(
+    mock_embed, mock_retrieve, mock_generate
+):
+    mock_embed.return_value = [0.1]
+    mock_retrieve.return_value = []
+    mock_generate.return_value = "answer"
+
+    await run_rag_query(
+        "Follow-up question?", uuid4(), conversation_summary="The user previously asked about refunds."
+    )
+
+    system_prompt = mock_generate.call_args.kwargs["system"]
+    assert "The user previously asked about refunds." in system_prompt
+
+
 @patch("app.rag.service.stream_answer")
 @patch("app.rag.service.retrieve_top_chunks", new_callable=AsyncMock)
 @patch("app.rag.service.embed_query", new_callable=AsyncMock)
@@ -157,6 +175,28 @@ async def test_stream_rag_query_emits_sources_then_tokens_then_done(
     assert events[3].data["answer"] == "Refunds within 30 days."
     assert events[3].data["model"] == "claude-sonnet-5"
     assert events[3].data["provider"] == "anthropic"
+
+
+@patch("app.rag.service.stream_answer")
+@patch("app.rag.service.retrieve_top_chunks", new_callable=AsyncMock)
+@patch("app.rag.service.embed_query", new_callable=AsyncMock)
+async def test_stream_rag_query_forwards_conversation_summary_into_the_system_prompt(
+    mock_embed, mock_retrieve, mock_stream_answer
+):
+    mock_embed.return_value = [0.1]
+    mock_retrieve.return_value = []
+
+    async def fake_stream_answer(**_kwargs):
+        yield "answer"
+
+    mock_stream_answer.side_effect = fake_stream_answer
+
+    await _collect(
+        stream_rag_query("question", uuid4(), conversation_summary="Earlier, the user asked about refunds.")
+    )
+
+    system_prompt = mock_stream_answer.call_args.kwargs["system"]
+    assert "Earlier, the user asked about refunds." in system_prompt
 
 
 @patch("app.rag.service.stream_answer")

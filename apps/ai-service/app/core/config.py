@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     agent_max_tokens_per_turn: int = 1024
     agent_max_total_tokens: int = 20_000
 
+    # Phase 16: conversation memory. The gateway summarizes messages that
+    # have aged out of its bounded recent-message window; this bounds the
+    # LLM call that produces (and rolls forward) that summary.
+    memory_summary_max_tokens: int = 400
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -55,6 +55,31 @@ def test_query_returns_camel_case_response(mock_run_rag_query, *_mocks):
 @patch("app.main.close_redis_client", new_callable=AsyncMock)
 @patch("app.main.init_embedding_model", new_callable=AsyncMock)
 @patch("app.api.rag.run_rag_query", new_callable=AsyncMock)
+def test_query_forwards_conversation_summary(mock_run_rag_query, *_mocks):
+    mock_run_rag_query.return_value = RagQueryResponse(answer="answer", sources=[])
+
+    with TestClient(app) as client:
+        client.post(
+            "/rag/query",
+            json={
+                "question": "Follow-up?",
+                "organizationId": str(uuid4()),
+                "conversationSummary": "The user previously asked about refunds.",
+            },
+        )
+
+    args = mock_run_rag_query.call_args.args
+    assert args[4] == "The user previously asked about refunds."
+
+
+@patch("app.main.init_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_redis_client", new_callable=AsyncMock)
+@patch("app.main.close_redis_client", new_callable=AsyncMock)
+@patch("app.main.init_embedding_model", new_callable=AsyncMock)
+@patch("app.api.rag.run_rag_query", new_callable=AsyncMock)
 def test_llm_unavailable_maps_to_503(mock_run_rag_query, *_mocks):
     mock_run_rag_query.side_effect = LlmUnavailableError("rate limited")
 
