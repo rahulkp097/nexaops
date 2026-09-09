@@ -6,13 +6,17 @@ from app.api.agent import router as agent_router
 from app.api.evaluation import router as evaluation_router
 from app.api.health import router as health_router
 from app.api.memory import router as memory_router
+from app.api.middleware import RequestContextMiddleware
 from app.api.rag import router as rag_router
 from app.api.tools import router as tools_router
 from app.core.db import close_db_pool, init_db_pool
+from app.core.logging_config import configure_logging
 from app.core.readonly_db import close_readonly_db_pool, init_readonly_db_pool
 from app.core.redis import close_redis_client, init_redis_client
 from app.rag.embeddings import init_embedding_model
 from app.tools.bootstrap import register_default_tools
+
+configure_logging()
 
 
 @asynccontextmanager
@@ -31,6 +35,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="NexaOps AI Service", lifespan=lifespan)
+app.add_middleware(RequestContextMiddleware)
 
 app.include_router(health_router)
 app.include_router(rag_router)

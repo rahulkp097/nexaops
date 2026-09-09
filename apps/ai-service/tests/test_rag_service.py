@@ -29,6 +29,24 @@ def _make_chunk(**overrides):
 @patch("app.rag.service.generate_answer", new_callable=AsyncMock)
 @patch("app.rag.service.retrieve_top_chunks", new_callable=AsyncMock)
 @patch("app.rag.service.embed_query", new_callable=AsyncMock)
+async def test_retrieval_logs_chunk_count_and_organization_id(mock_embed, mock_retrieve, mock_generate, caplog):
+    mock_embed.return_value = [0.1, 0.2]
+    mock_retrieve.return_value = [_make_chunk(), _make_chunk()]
+    mock_generate.return_value = "answer"
+    org_id = uuid4()
+
+    with caplog.at_level("INFO", logger="app.rag.service"):
+        await run_rag_query("What is the refund policy?", org_id)
+
+    assert any(
+        "Retrieval completed" in record.message and str(org_id) in record.message and "chunks=2" in record.message
+        for record in caplog.records
+    )
+
+
+@patch("app.rag.service.generate_answer", new_callable=AsyncMock)
+@patch("app.rag.service.retrieve_top_chunks", new_callable=AsyncMock)
+@patch("app.rag.service.embed_query", new_callable=AsyncMock)
 async def test_sources_are_an_exact_map_of_retrieved_chunks(mock_embed, mock_retrieve, mock_generate):
     mock_embed.return_value = [0.1, 0.2]
     chunk = _make_chunk()

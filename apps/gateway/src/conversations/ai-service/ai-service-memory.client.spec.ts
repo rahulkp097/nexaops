@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { RequestContextService } from '../../observability/request-context.service';
 import { AiServiceMemoryClient } from './ai-service-memory.client';
 
 describe('AiServiceMemoryClient', () => {
@@ -8,9 +9,9 @@ describe('AiServiceMemoryClient', () => {
     global.fetch = originalFetch;
   });
 
-  function makeClient(aiServiceUrl?: string) {
+  function makeClient(aiServiceUrl?: string, requestContext = new RequestContextService()) {
     const config = { get: jest.fn().mockReturnValue(aiServiceUrl) } as unknown as ConfigService;
-    return new AiServiceMemoryClient(config);
+    return new AiServiceMemoryClient(config, requestContext);
   }
 
   it('POSTs previousSummary/messages to AI_SERVICE_URL and returns the summary', async () => {
@@ -56,5 +57,23 @@ describe('AiServiceMemoryClient', () => {
     const client = makeClient();
 
     await expect(client.summarize({ previousSummary: null, messages: [] })).rejects.toThrow('503');
+  });
+
+  it('forwards the current request id as X-Request-Id when one is set', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ summary: 'ok' }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const requestContext = new RequestContextService();
+    const client = makeClient('http://ai-service:9000', requestContext);
+
+    await requestContext.run({ requestId: 'req-1' }, () =>
+      client.summarize({ previousSummary: null, messages: [] }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'req-1' },
+      }),
+    );
   });
 });

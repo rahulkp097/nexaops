@@ -212,6 +212,30 @@ def _mock_tool_use_block(id_: str, name: str, tool_input: dict):
     return block
 
 
+async def test_create_message_logs_model_provider_and_token_usage(caplog):
+    with patch("app.rag.llm_client.get_settings", return_value=_mock_settings()):
+        with patch("app.rag.llm_client.anthropic.AsyncAnthropic") as mock_client_cls:
+            mock_response = MagicMock(
+                stop_reason="end_turn",
+                content=[_mock_text_block("hi")],
+                usage=MagicMock(input_tokens=120, output_tokens=30),
+            )
+            mock_client = MagicMock()
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            with caplog.at_level("INFO", logger="app.rag.llm_client"):
+                await create_message("system", [{"role": "user", "content": "q"}], max_tokens=100)
+
+    assert any(
+        "LLM request completed" in r.message
+        and "model=claude-sonnet-5" in r.message
+        and "input_tokens=120" in r.message
+        and "output_tokens=30" in r.message
+        for r in caplog.records
+    )
+
+
 async def test_create_message_does_not_send_tools_when_none_are_given():
     with patch("app.rag.llm_client.get_settings", return_value=_mock_settings()):
         with patch("app.rag.llm_client.anthropic.AsyncAnthropic") as mock_client_cls:

@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { RequestContextService } from '../../observability/request-context.service';
 import { AiServiceRagClient } from './ai-service-rag.client';
 
 function makeSseResponse(body: string, init: { ok?: boolean; status?: number } = {}) {
@@ -37,9 +38,9 @@ describe('AiServiceRagClient', () => {
     global.fetch = originalFetch;
   });
 
-  function makeClient(aiServiceUrl?: string) {
+  function makeClient(aiServiceUrl?: string, requestContext = new RequestContextService()) {
     const config = { get: jest.fn().mockReturnValue(aiServiceUrl) } as unknown as ConfigService;
-    return new AiServiceRagClient(config);
+    return new AiServiceRagClient(config, requestContext);
   }
 
   it('POSTs question/organizationId/history to AI_SERVICE_URL and yields parsed events', async () => {
@@ -124,5 +125,23 @@ describe('AiServiceRagClient', () => {
     await expect(
       collect(client.streamQuery({ question: 'q', organizationId: 'org-1', history: [] })),
     ).rejects.toThrow('empty response body');
+  });
+
+  it('forwards the current request id as X-Request-Id when one is set', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(makeSseResponse('event: done\ndata: {}\n\n'));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const requestContext = new RequestContextService();
+    const client = makeClient('http://ai-service:9000', requestContext);
+
+    await requestContext.run({ requestId: 'req-1' }, () =>
+      collect(client.streamQuery({ question: 'q', organizationId: 'org-1', history: [] })),
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'req-1' },
+      }),
+    );
   });
 });

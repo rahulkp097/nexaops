@@ -346,6 +346,22 @@ async def test_a_case_that_raises_unexpectedly_does_not_abort_the_run():
     assert "Unexpected error" in result.results[0].error
 
 
+async def test_run_evaluation_logs_a_summary_line(caplog):
+    case = EvaluationCaseDto(
+        id=uuid4(), category="BUSINESS_API", question="n/a", metadata={"toolName": "get_order"}
+    )
+    with patch("app.evaluation.runner.registry.execute", new_callable=AsyncMock) as mock_execute:
+        mock_execute.return_value = ToolCallResult(ok=True, data={})
+
+        with caplog.at_level("INFO", logger="app.evaluation.runner"):
+            await run_evaluation(_request([case]))
+
+    assert any(
+        "Evaluation run completed" in r.message and "total_cases=1" in r.message and "passed=1" in r.message
+        for r in caplog.records
+    )
+
+
 async def test_run_evaluation_reports_model_and_provider():
     case = EvaluationCaseDto(
         id=uuid4(), category="BUSINESS_API", question="n/a", metadata={"toolName": "get_order"}

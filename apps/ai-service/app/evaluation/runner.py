@@ -39,6 +39,7 @@ async def run_evaluation(request: RunEvaluationRequest) -> RunEvaluationResponse
     fixture case shouldn't hide every other case's result."""
     settings = get_settings()
     context = ToolContext(organization_id=request.organization_id, user_id=request.user_id, role=request.role)
+    run_start = time.monotonic()
 
     results: list[EvaluationCaseResult] = []
     for dto in request.cases:
@@ -67,9 +68,22 @@ async def run_evaluation(request: RunEvaluationRequest) -> RunEvaluationResponse
             )
         results.append(result)
 
+    metrics = aggregate_metrics(results)
+    duration_ms = round((time.monotonic() - run_start) * 1000, 1)
+    # spec §27: "Evaluation result." — one summary line per run, not one
+    # per case (each case's own pipeline call already logs itself).
+    logger.info(
+        "Evaluation run completed: organization_id=%s total_cases=%s passed=%s pass_rate=%.2f duration_ms=%s",
+        request.organization_id,
+        metrics["totalCases"],
+        metrics["passedCases"],
+        metrics["passRate"],
+        duration_ms,
+    )
+
     return RunEvaluationResponse(
         results=[EvaluationCaseResultDto(**asdict(r)) for r in results],
-        metrics=aggregate_metrics(results),
+        metrics=metrics,
         model=settings.ai_model,
         provider=settings.ai_provider,
     )
