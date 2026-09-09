@@ -4,6 +4,12 @@ import { withRequestId } from '../../observability/http-headers.util';
 import { RequestContextService } from '../../observability/request-context.service';
 import { RagHistoryMessage } from './ai-service-rag.client';
 
+// Phase 19 (spec §28: "Timeouts on external/model calls"): a short,
+// non-streaming call bounded well under a minute in practice
+// (memory_summary_max_tokens is 400) — this failing should surface
+// quickly, not hold up the message it's summarizing alongside.
+const SUMMARIZE_REQUEST_TIMEOUT_MS = 30_000;
+
 @Injectable()
 export class AiServiceMemoryClient {
   constructor(
@@ -22,6 +28,7 @@ export class AiServiceMemoryClient {
         previousSummary: input.previousSummary,
         messages: input.messages,
       }),
+      signal: AbortSignal.timeout(SUMMARIZE_REQUEST_TIMEOUT_MS),
     });
 
     if (!response.ok) {

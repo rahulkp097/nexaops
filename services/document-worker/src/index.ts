@@ -28,7 +28,10 @@ app.listen(port, () => {
 
 async function startIngestion(): Promise<void> {
   const connection = await getConnection();
-  const channel = await connection.createChannel();
+  // A confirm channel (not a plain one): startConsumer's DLQ publish needs
+  // a broker-acknowledged confirm before it's safe to ack the original
+  // message (Phase 19, spec §28's "Publisher confirms where appropriate").
+  const channel = await connection.createConfirmChannel();
   await setupTopology(channel);
 
   // Warm up the model once at startup, not on whichever message happens

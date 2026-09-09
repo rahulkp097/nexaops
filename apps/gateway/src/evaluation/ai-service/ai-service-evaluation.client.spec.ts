@@ -67,6 +67,7 @@ describe('AiServiceEvaluationClient', () => {
             },
           ],
         }),
+        signal: expect.any(AbortSignal),
       }),
     );
     expect(payload.metrics).toEqual({ totalCases: 1 });

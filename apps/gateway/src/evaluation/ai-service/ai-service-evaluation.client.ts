@@ -22,6 +22,13 @@ export interface RunEvaluationPayload {
   provider: string;
 }
 
+// Phase 19 (spec §28: "Timeouts on external/model calls"): a single call
+// fans out across an entire dataset's cases sequentially — with agent
+// cases each carrying their own ~45s budget, a run over a few dozen cases
+// can legitimately take minutes, so this is deliberately much larger than
+// the other ai-service clients' timeouts rather than one shared constant.
+const EVALUATION_RUN_TIMEOUT_MS = 300_000;
+
 @Injectable()
 export class AiServiceEvaluationClient {
   constructor(
@@ -58,6 +65,7 @@ export class AiServiceEvaluationClient {
           metadata: row.metadata,
         })),
       }),
+      signal: AbortSignal.timeout(EVALUATION_RUN_TIMEOUT_MS),
     });
 
     if (!response.ok) {

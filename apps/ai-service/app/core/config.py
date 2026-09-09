@@ -18,6 +18,19 @@ class Settings(BaseSettings):
     ai_provider: str = "anthropic"
     ai_api_key: str = ""
     ai_model: str = "claude-sonnet-5"
+    # Phase 19 (spec §28: "Timeouts on external/model calls"): explicit
+    # rather than the SDK's own 10-minute default — every call in this app
+    # is bounded well under a minute in practice (rag_max_answer_tokens is
+    # 2048, agent turns are capped tighter still), so a hung connection
+    # should surface as a timeout long before that. max_retries is also
+    # explicit rather than left implicit: the SDK already retries
+    # connection errors, 429, and 5xx with exponential backoff on its own
+    # (spec's "Circuit-breaker/backoff where appropriate" — this project
+    # doesn't need a bespoke one on top of what the provider SDK gives for
+    # free) — a 400 (e.g. the account's known zero-credit-balance rejection)
+    # is never retried either way, since it isn't transient.
+    ai_request_timeout_seconds: float = 60.0
+    ai_max_retries: int = 2
 
     # Shared with services/document-worker's EMBEDDING_MODEL/MODEL_CACHE_DIR
     # — same env var names on purpose, so query-time and indexing-time

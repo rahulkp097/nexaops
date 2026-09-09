@@ -37,6 +37,7 @@ describe('AiServiceMemoryClient', () => {
           previousSummary: null,
           messages: [{ role: 'user', content: 'What is order 10291’s status?' }],
         }),
+        signal: expect.any(AbortSignal),
       }),
     );
     expect(summary).toBe('The user asked about order 10291.');

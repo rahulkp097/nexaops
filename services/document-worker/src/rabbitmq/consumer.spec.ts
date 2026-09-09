@@ -3,7 +3,7 @@ jest.mock('../documents/repository', () => ({ markDocumentStatus: jest.fn().mock
 jest.mock('../ingestion/process-message', () => ({ processIngestionMessage: jest.fn() }));
 jest.mock('../ingestion/retry-policy', () => ({ hasExhaustedRetries: jest.fn() }));
 
-import type { Channel, ConsumeMessage } from 'amqplib';
+import type { ConfirmChannel, ConsumeMessage } from 'amqplib';
 import { markDocumentStatus } from '../documents/repository';
 import { DocumentNotFoundError, TenantMismatchError, UnrecoverableIngestionError } from '../ingestion/errors';
 import { processIngestionMessage } from '../ingestion/process-message';
@@ -15,13 +15,19 @@ const mockProcess = processIngestionMessage as jest.Mock;
 const mockHasExhausted = hasExhaustedRetries as jest.Mock;
 const mockMarkStatus = markDocumentStatus as jest.Mock;
 
-function createMockChannel(): jest.Mocked<Channel> {
+// Defaults to immediately confirming every publish (as if the broker
+// acked it) — createMockChannel({ confirmError: new Error(...) }) instead
+// simulates a DLQ publish the broker never confirmed.
+function createMockChannel(options: { confirmError?: Error } = {}): jest.Mocked<ConfirmChannel> {
   return {
     consume: jest.fn(),
     ack: jest.fn(),
     nack: jest.fn(),
-    publish: jest.fn(),
-  } as unknown as jest.Mocked<Channel>;
+    publish: jest.fn((_exchange, _routingKey, _content, _options, callback?: (err: Error | null) => void) => {
+      callback?.(options.confirmError ?? null);
+      return true;
+    }),
+  } as unknown as jest.Mocked<ConfirmChannel>;
 }
 
 function makeMessage(payload: unknown): ConsumeMessage {
@@ -33,7 +39,7 @@ function makeMessage(payload: unknown): ConsumeMessage {
 }
 
 // Extracts the handler passed to channel.consume and awaits its (fire-and-forget) work.
-async function deliver(channel: jest.Mocked<Channel>, msg: ConsumeMessage): Promise<void> {
+async function deliver(channel: jest.Mocked<ConfirmChannel>, msg: ConsumeMessage): Promise<void> {
   await startConsumer(channel);
   const handler = (channel.consume as jest.Mock).mock.calls[0][1] as (m: ConsumeMessage | null) => void;
   handler(msg);
@@ -97,6 +103,7 @@ describe('startConsumer', () => {
       DLQ_ROUTING_KEY,
       msg.content,
       expect.objectContaining({ headers: expect.objectContaining({ 'x-ingestion-failure-reason': 'tenant-mismatch' }) }),
+      expect.any(Function),
     );
     expect(channel.ack).toHaveBeenCalledWith(msg);
     expect(mockMarkStatus).not.toHaveBeenCalled();
@@ -115,6 +122,7 @@ describe('startConsumer', () => {
       DLQ_ROUTING_KEY,
       msg.content,
       expect.objectContaining({ headers: expect.objectContaining({ 'x-ingestion-failure-reason': 'unrecoverable' }) }),
+      expect.any(Function),
     );
     expect(channel.ack).toHaveBeenCalledWith(msg);
   });
@@ -146,6 +154,7 @@ describe('startConsumer', () => {
       DLQ_ROUTING_KEY,
       msg.content,
       expect.objectContaining({ headers: expect.objectContaining({ 'x-ingestion-failure-reason': 'retries-exhausted' }) }),
+      expect.any(Function),
     );
     expect(channel.ack).toHaveBeenCalledWith(msg);
   });
@@ -166,7 +175,36 @@ describe('startConsumer', () => {
       DLQ_ROUTING_KEY,
       msg.content,
       expect.objectContaining({ headers: expect.objectContaining({ 'x-ingestion-failure-reason': 'malformed-message' }) }),
+      expect.any(Function),
     );
     expect(channel.ack).toHaveBeenCalledWith(msg);
+  });
+
+  it('leaves the message unacked when the broker never confirms the DLQ publish (malformed message)', async () => {
+    const channel = createMockChannel({ confirmError: new Error('channel closed') });
+    const msg = {
+      content: Buffer.from('not json'),
+      properties: { headers: {} },
+      fields: {},
+    } as unknown as ConsumeMessage;
+
+    await deliver(channel, msg);
+
+    expect(channel.publish).toHaveBeenCalled();
+    expect(channel.ack).not.toHaveBeenCalled();
+    expect(channel.nack).not.toHaveBeenCalled();
+  });
+
+  it('leaves the message unacked when the broker never confirms the DLQ publish (retries exhausted)', async () => {
+    mockProcess.mockRejectedValue(new Error('db hiccup'));
+    mockHasExhausted.mockReturnValue(true);
+    const channel = createMockChannel({ confirmError: new Error('channel closed') });
+    const msg = makeMessage(payload);
+
+    await deliver(channel, msg);
+
+    expect(mockMarkStatus).toHaveBeenCalledWith({}, 'doc-1', 'org-1', 'FAILED');
+    expect(channel.publish).toHaveBeenCalled();
+    expect(channel.ack).not.toHaveBeenCalled();
   });
 });
