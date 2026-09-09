@@ -69,6 +69,33 @@ describe('AiServiceRagClient', () => {
     ]);
   });
 
+  it('includes conversationSummary in the request body when given', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(makeSseResponse('event: done\ndata: {}\n\n'));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const client = makeClient('http://ai-service:9000');
+
+    await collect(
+      client.streamQuery({
+        question: 'q',
+        organizationId: 'org-1',
+        history: [],
+        conversationSummary: 'The user previously asked about refunds.',
+      }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://ai-service:9000/rag/query/stream',
+      expect.objectContaining({
+        body: JSON.stringify({
+          question: 'q',
+          organizationId: 'org-1',
+          history: [],
+          conversationSummary: 'The user previously asked about refunds.',
+        }),
+      }),
+    );
+  });
+
   it('defaults to http://localhost:8000 when AI_SERVICE_URL is not configured', async () => {
     const fetchMock = jest.fn().mockResolvedValue(makeSseResponse('event: done\ndata: {}\n\n'));
     global.fetch = fetchMock as unknown as typeof fetch;

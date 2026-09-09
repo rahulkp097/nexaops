@@ -23,7 +23,11 @@ logger = logging.getLogger(__name__)
 async def query(payload: RagQueryRequest) -> RagQueryResponse:
     try:
         return await run_rag_query(
-            payload.question, payload.organization_id, payload.history, payload.metadata_filter
+            payload.question,
+            payload.organization_id,
+            payload.history,
+            payload.metadata_filter,
+            payload.conversation_summary,
         )
     except LlmUnavailableError as exc:
         raise HTTPException(status_code=503, detail="AI provider temporarily unavailable") from exc
@@ -40,7 +44,11 @@ async def query_stream(payload: RagQueryRequest) -> StreamingResponse:
     async def event_source():
         try:
             async for evt in stream_rag_query(
-                payload.question, payload.organization_id, payload.history, payload.metadata_filter
+                payload.question,
+                payload.organization_id,
+                payload.history,
+                payload.metadata_filter,
+                payload.conversation_summary,
             ):
                 yield _sse(evt.event, evt.data)
         except LlmUnavailableError as exc:

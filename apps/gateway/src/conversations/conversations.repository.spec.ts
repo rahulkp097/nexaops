@@ -72,6 +72,34 @@ describe('ConversationsRepository', () => {
     expect(params).toEqual(['conv-1', 10]);
   });
 
+  it('countMessagesByConversation returns the total as a number', async () => {
+    const { repository, query } = makeRepository([{ count: '11' }]);
+
+    const result = await repository.countMessagesByConversation('conv-1');
+
+    expect(query).toHaveBeenCalledWith(expect.any(String), ['conv-1']);
+    expect(result).toBe(11);
+  });
+
+  it('listMessageRange orders oldest first and binds offset/limit', async () => {
+    const { repository, query } = makeRepository([]);
+
+    await repository.listMessageRange('conv-1', 5, 3);
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toContain('ORDER BY created_at ASC');
+    expect(sql).toContain('OFFSET $2 LIMIT $3');
+    expect(params).toEqual(['conv-1', 5, 3]);
+  });
+
+  it('updateSummary binds the conversation id, summary text, and count', async () => {
+    const { repository, query } = makeRepository([]);
+
+    await repository.updateSummary('conv-1', 'a running summary', 4);
+
+    expect(query).toHaveBeenCalledWith(expect.any(String), ['conv-1', 'a running summary', 4]);
+  });
+
   it('createMessageSources inserts one row per source and returns them all', async () => {
     const query = jest
       .fn()

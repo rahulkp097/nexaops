@@ -4,7 +4,7 @@ import logging
 import time
 from typing import Any
 
-from app.agents.prompt import SYSTEM_PROMPT
+from app.agents.prompt import build_system_prompt
 from app.agents.types import AgentRunResult, ToolCallTrace
 from app.core.config import get_settings
 from app.core.schemas import HistoryMessageDto
@@ -25,6 +25,7 @@ async def run_agent(
     question: str,
     context: ToolContext,
     history: list[HistoryMessageDto] | None = None,
+    conversation_summary: str | None = None,
 ) -> AgentRunResult:
     """spec §22: the bounded "LLM -> tool -> more steps? -> LLM" loop.
     Every bound the spec calls out is enforced here — max tool calls, max
@@ -44,6 +45,7 @@ async def run_agent(
     # call — never let the LLM make an authorization decision, don't even
     # give it standing to try.
     tool_schemas = registry.to_anthropic_tools(role=context.role)
+    system_prompt = build_system_prompt(conversation_summary)
 
     messages: list[dict[str, Any]] = [{"role": turn.role, "content": turn.content} for turn in (history or [])]
     messages.append({"role": "user", "content": question})
@@ -69,7 +71,7 @@ async def run_agent(
         try:
             result = await asyncio.wait_for(
                 create_message(
-                    system=SYSTEM_PROMPT,
+                    system=system_prompt,
                     messages=messages,
                     max_tokens=settings.agent_max_tokens_per_turn,
                     tools=offer_tools,
