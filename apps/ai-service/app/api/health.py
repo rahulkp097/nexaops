@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Response
 
 from app.core.db import check_db
+from app.core.readonly_db import check_readonly_db
 from app.core.redis import check_redis
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -15,6 +16,12 @@ async def health(response: Response) -> dict:
         checks["postgres"] = "ok"
     except Exception:
         checks["postgres"] = "error"
+
+    try:
+        await check_readonly_db()
+        checks["postgres_readonly"] = "ok"
+    except Exception:
+        checks["postgres_readonly"] = "error"
 
     try:
         await check_redis()

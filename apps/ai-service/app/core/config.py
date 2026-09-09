@@ -7,6 +7,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_app_url: str = "postgresql://nexaops_app:nexaops_app@localhost:55432/nexaops"
+    # Phase 12's NL-to-SQL tool connects with this role, never database_app_url
+    # — it is SELECT-only and read-only-transaction at the Postgres role level
+    # (see infra/database/migrations/..._create-db-roles-and-grants.js), so a
+    # bug in the app-layer validator is not the only thing standing between a
+    # generated query and a write.
+    database_readonly_url: str = "postgresql://nexaops_readonly:nexaops_readonly@localhost:55432/nexaops"
     redis_url: str = "redis://localhost:56379"
 
     ai_provider: str = "anthropic"
@@ -31,6 +37,11 @@ class Settings(BaseSettings):
     # Default per-tool-call timeout (Phase 11 spec: every registered tool
     # declares one); individual tools may override it.
     tool_call_timeout_seconds: float = 5.0
+
+    # Phase 12: safe natural-language-to-SQL, scoped to the sales_orders
+    # analytics table (see app/sql/schema.py).
+    sql_generation_max_tokens: int = 300
+    sql_row_limit: int = 100
 
 
 @lru_cache

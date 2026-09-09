@@ -13,6 +13,8 @@ from app.rag.schemas import RagQueryResponse, SourceDto
 
 @patch("app.main.init_db_pool", new_callable=AsyncMock)
 @patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
 @patch("app.main.init_redis_client", new_callable=AsyncMock)
 @patch("app.main.close_redis_client", new_callable=AsyncMock)
 @patch("app.main.init_embedding_model", new_callable=AsyncMock)
@@ -47,6 +49,8 @@ def test_query_returns_camel_case_response(mock_run_rag_query, *_mocks):
 
 @patch("app.main.init_db_pool", new_callable=AsyncMock)
 @patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
 @patch("app.main.init_redis_client", new_callable=AsyncMock)
 @patch("app.main.close_redis_client", new_callable=AsyncMock)
 @patch("app.main.init_embedding_model", new_callable=AsyncMock)
@@ -65,6 +69,8 @@ def test_llm_unavailable_maps_to_503(mock_run_rag_query, *_mocks):
 
 @patch("app.main.init_db_pool", new_callable=AsyncMock)
 @patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
 @patch("app.main.init_redis_client", new_callable=AsyncMock)
 @patch("app.main.close_redis_client", new_callable=AsyncMock)
 @patch("app.main.init_embedding_model", new_callable=AsyncMock)
@@ -83,6 +89,8 @@ def test_llm_request_error_maps_to_502(mock_run_rag_query, *_mocks):
 
 @patch("app.main.init_db_pool", new_callable=AsyncMock)
 @patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
 @patch("app.main.init_redis_client", new_callable=AsyncMock)
 @patch("app.main.close_redis_client", new_callable=AsyncMock)
 @patch("app.main.init_embedding_model", new_callable=AsyncMock)
@@ -110,6 +118,8 @@ def _parse_sse(body: str) -> list[tuple[str, dict]]:
 
 @patch("app.main.init_db_pool", new_callable=AsyncMock)
 @patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
 @patch("app.main.init_redis_client", new_callable=AsyncMock)
 @patch("app.main.close_redis_client", new_callable=AsyncMock)
 @patch("app.main.init_embedding_model", new_callable=AsyncMock)
@@ -142,6 +152,8 @@ def test_query_stream_forwards_events_as_sse(mock_stream_rag_query, *_mocks):
 
 @patch("app.main.init_db_pool", new_callable=AsyncMock)
 @patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
 @patch("app.main.init_redis_client", new_callable=AsyncMock)
 @patch("app.main.close_redis_client", new_callable=AsyncMock)
 @patch("app.main.init_embedding_model", new_callable=AsyncMock)
