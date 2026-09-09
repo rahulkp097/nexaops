@@ -1,16 +1,9 @@
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import Field
 
-
-class CamelModel(BaseModel):
-    """Base for RAG DTOs: camelCase over the wire, matching the gateway's
-    existing wire convention and spec §15's example JSON (documentId,
-    chunkId, ...), while Python code stays snake_case."""
-
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+from app.core.schemas import CamelModel
 
 
 class HistoryMessageDto(CamelModel):

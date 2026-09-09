@@ -81,6 +81,7 @@ services:
     environment:
       DATABASE_APP_URL: postgresql://nexaops_app:${DB_APP_PASSWORD}@postgres:5432/nexaops
       REDIS_URL: redis://redis:6379
+      MOCK_BUSINESS_URL: http://mock-business:4200
     ports:
       - "8000:8000"
     volumes:
