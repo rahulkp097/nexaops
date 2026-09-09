@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     # RRF fuses and trims down to rag_top_k (Phase 7 hybrid retrieval).
     rag_candidate_pool_size: int = 20
 
+    # Phase 10's deterministic mock operational API — no tenant concept of
+    # its own (see app/tools/business_client.py), unlike documents/RAG.
+    mock_business_url: str = "http://localhost:4200"
+    # Default per-tool-call timeout (Phase 11 spec: every registered tool
+    # declares one); individual tools may override it.
+    tool_call_timeout_seconds: float = 5.0
+
 
 @lru_cache
 def get_settings() -> Settings:
