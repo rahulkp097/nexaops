@@ -11,6 +11,8 @@ from app.tools.business_client import MockBusinessNotFoundError
 
 @patch("app.main.init_db_pool", new_callable=AsyncMock)
 @patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
 @patch("app.main.init_redis_client", new_callable=AsyncMock)
 @patch("app.main.close_redis_client", new_callable=AsyncMock)
 @patch("app.main.init_embedding_model", new_callable=AsyncMock)
@@ -38,6 +40,8 @@ def test_execute_get_order_end_to_end_through_the_real_registry(mock_get_order, 
 
 @patch("app.main.init_db_pool", new_callable=AsyncMock)
 @patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
 @patch("app.main.init_redis_client", new_callable=AsyncMock)
 @patch("app.main.close_redis_client", new_callable=AsyncMock)
 @patch("app.main.init_embedding_model", new_callable=AsyncMock)
@@ -64,6 +68,8 @@ def test_execute_unknown_tool_returns_200_with_a_structured_error(*_mocks):
 
 @patch("app.main.init_db_pool", new_callable=AsyncMock)
 @patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
 @patch("app.main.init_redis_client", new_callable=AsyncMock)
 @patch("app.main.close_redis_client", new_callable=AsyncMock)
 @patch("app.main.init_embedding_model", new_callable=AsyncMock)
@@ -87,6 +93,8 @@ def test_execute_rejects_a_role_not_allowed_to_call_the_tool(*_mocks):
 
 @patch("app.main.init_db_pool", new_callable=AsyncMock)
 @patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
 @patch("app.main.init_redis_client", new_callable=AsyncMock)
 @patch("app.main.close_redis_client", new_callable=AsyncMock)
 @patch("app.main.init_embedding_model", new_callable=AsyncMock)
@@ -108,6 +116,8 @@ def test_execute_malformed_organization_id_is_rejected_before_any_tool_runs(*_mo
 
 @patch("app.main.init_db_pool", new_callable=AsyncMock)
 @patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
 @patch("app.main.init_redis_client", new_callable=AsyncMock)
 @patch("app.main.close_redis_client", new_callable=AsyncMock)
 @patch("app.main.init_embedding_model", new_callable=AsyncMock)

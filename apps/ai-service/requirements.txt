@@ -11,3 +11,4 @@ tokenizers==0.23.2
 huggingface-hub==1.30.0
 pgvector==0.5.0
 numpy==2.4.6
+sqlglot==30.18.0

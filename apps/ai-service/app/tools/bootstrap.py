@@ -1,4 +1,4 @@
-from app.tools import business_tools, search_tool
+from app.tools import business_tools, search_tool, sql_tool
 from app.tools.registry import registry
 
 
@@ -11,3 +11,4 @@ def register_default_tools() -> None:
     registry.clear()
     business_tools.register_all(registry)
     search_tool.register_all(registry)
+    sql_tool.register_all(registry)
