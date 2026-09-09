@@ -1,5 +1,7 @@
 import logging
 from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
+from typing import Any
 
 import anthropic
 
@@ -14,6 +16,33 @@ logger = logging.getLogger(__name__)
 _REFUSAL_ANSWER = "I'm not able to answer that question based on the available evidence."
 
 _client: anthropic.AsyncAnthropic | None = None
+
+
+@dataclass(frozen=True)
+class ToolUseRequest:
+    id: str
+    name: str
+    input: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class MessageResult:
+    """Everything app.agents.orchestrator needs from one Claude turn — a
+    richer result than generate_answer's plain string, since the agent
+    loop (unlike a one-shot RAG answer) has to inspect stop_reason and any
+    requested tool calls, and re-submit the exact same content blocks
+    Claude sent as the next turn's assistant message."""
+
+    stop_reason: str
+    text: str
+    tool_uses: list[ToolUseRequest]
+    # Anthropic's own content-block shape, verbatim — this is what must be
+    # appended back as the assistant's turn when continuing a tool-use
+    # conversation; re-deriving it from `text`/`tool_uses` alone would lose
+    # information (block ordering, citations, etc.).
+    raw_content: list[dict[str, Any]] = field(default_factory=list)
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 def _get_client() -> anthropic.AsyncAnthropic:
@@ -59,27 +88,71 @@ def _map_error(exc: anthropic.APIError, model: str) -> RagServiceError:
     return LlmUnavailableError("Could not reach AI provider")
 
 
-async def generate_answer(system: str, messages: list[dict[str, str]], max_tokens: int) -> str:
+def _block_to_dict(block: Any) -> dict[str, Any]:
+    if block.type == "text":
+        return {"type": "text", "text": block.text}
+    if block.type == "tool_use":
+        return {"type": "tool_use", "id": block.id, "name": block.name, "input": block.input}
+    # Anything else (e.g. a future block type) is passed through via the
+    # SDK's own serialization rather than dropped — Claude still needs it
+    # echoed back verbatim if this turn is continued.
+    return block.model_dump(mode="json")
+
+
+async def create_message(
+    system: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+    tools: list[dict[str, Any]] | None = None,
+) -> MessageResult:
+    """Lower-level than generate_answer: used by app.agents.orchestrator,
+    which needs stop_reason and any requested tool calls, not just the
+    final text. generate_answer is a thin wrapper over this."""
     _check_configured()
     settings = get_settings()
 
+    # Send `tools` only when non-empty rather than `[]` — the SDK's own
+    # default is to omit the field entirely, and an actually-empty list is
+    # untested territory on the API side.
+    create_kwargs: dict[str, Any] = dict(
+        model=settings.ai_model,
+        max_tokens=max_tokens,
+        system=system,
+        messages=messages,
+        # Bounded factual Q&A over a handful of short chunks doesn't
+        # benefit from the model's higher default reasoning effort.
+        output_config={"effort": "low"},
+    )
+    if tools:
+        create_kwargs["tools"] = tools
+
     try:
-        response = await _get_client().messages.create(
-            model=settings.ai_model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=messages,
-            # Bounded factual Q&A over a handful of short chunks doesn't
-            # benefit from the model's higher default reasoning effort.
-            output_config={"effort": "low"},
-        )
+        response = await _get_client().messages.create(**create_kwargs)
     except anthropic.APIError as exc:
         raise _map_error(exc, settings.ai_model) from exc
 
-    if response.stop_reason == "refusal":
-        return _REFUSAL_ANSWER
+    text = "".join(block.text for block in response.content if block.type == "text").strip()
+    tool_uses = [
+        ToolUseRequest(id=block.id, name=block.name, input=block.input)
+        for block in response.content
+        if block.type == "tool_use"
+    ]
 
-    return "".join(block.text for block in response.content if block.type == "text").strip()
+    return MessageResult(
+        stop_reason=response.stop_reason,
+        text=text,
+        tool_uses=tool_uses,
+        raw_content=[_block_to_dict(block) for block in response.content],
+        input_tokens=response.usage.input_tokens,
+        output_tokens=response.usage.output_tokens,
+    )
+
+
+async def generate_answer(system: str, messages: list[dict[str, str]], max_tokens: int) -> str:
+    result = await create_message(system=system, messages=messages, max_tokens=max_tokens)
+    if result.stop_reason == "refusal":
+        return _REFUSAL_ANSWER
+    return result.text
 
 
 async def stream_answer(

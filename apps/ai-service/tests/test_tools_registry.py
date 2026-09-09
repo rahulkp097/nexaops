@@ -162,3 +162,25 @@ def test_to_anthropic_tools_has_the_expected_shape():
     assert tools[0]["description"] == "Echoes its input back."
     assert "title" not in tools[0]["input_schema"]
     assert tools[0]["input_schema"]["properties"]["value"]["type"] == "string"
+
+
+def test_to_anthropic_tools_with_no_role_returns_every_tool_regardless_of_allowed_roles():
+    registry = ToolRegistry()
+    _register_echo(registry, allowed_roles=frozenset({"ADMIN"}))
+
+    assert len(registry.to_anthropic_tools()) == 1
+
+
+def test_to_anthropic_tools_with_a_role_excludes_tools_that_role_cannot_call():
+    registry = ToolRegistry()
+    _register_echo(registry, allowed_roles=frozenset({"ADMIN"}))
+
+    assert registry.to_anthropic_tools(role="EMPLOYEE") == []
+    assert len(registry.to_anthropic_tools(role="ADMIN")) == 1
+
+
+def test_to_anthropic_tools_with_a_role_includes_tools_open_to_any_role():
+    registry = ToolRegistry()
+    _register_echo(registry, allowed_roles=None)
+
+    assert len(registry.to_anthropic_tools(role="EMPLOYEE")) == 1

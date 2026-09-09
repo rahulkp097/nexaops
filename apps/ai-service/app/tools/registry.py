@@ -42,13 +42,21 @@ class ToolRegistry:
     def list_definitions(self) -> list[ToolDefinition]:
         return list(self._definitions.values())
 
-    def to_anthropic_tools(self) -> list[dict[str, Any]]:
+    def to_anthropic_tools(self, role: str | None = None) -> list[dict[str, Any]]:
         """The `tools` parameter shape Anthropic's Messages API expects —
-        what the (Phase 13) agent loop hands the model so it can select a
+        what app.agents.orchestrator hands the model so it can select a
         tool by name. Unregistered tool names are therefore never even
-        visible to the model, let alone callable."""
+        visible to the model, let alone callable.
+
+        When `role` is given, tools that role isn't allowed to call are
+        left out entirely — defense in depth beyond execute()'s own
+        per-call check: the model is never even offered a tool name it has
+        no standing to use, on top of that call being independently
+        rejected server-side if it tried anyway."""
         tools = []
         for definition in self._definitions.values():
+            if role is not None and definition.allowed_roles is not None and role not in definition.allowed_roles:
+                continue
             schema = definition.input_model.model_json_schema()
             schema.pop("title", None)
             tools.append(

@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     sql_generation_max_tokens: int = 300
     sql_row_limit: int = 100
 
+    # Phase 13: agent orchestration bounds (spec §22's own required list —
+    # "Maximum tool calls. Maximum iterations. Timeout budget. Token/context
+    # budget."). All four are enforced in app/agents/orchestrator.py.
+    agent_max_iterations: int = 6
+    agent_max_tool_calls: int = 8
+    agent_timeout_seconds: float = 45.0
+    agent_max_tokens_per_turn: int = 1024
+    agent_max_total_tokens: int = 20_000
+
 
 @lru_cache
 def get_settings() -> Settings:
