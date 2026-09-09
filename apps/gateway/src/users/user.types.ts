@@ -18,3 +18,8 @@ export interface CreateUserInput {
   passwordHash: string;
   role: Role;
 }
+
+export interface UpdateUserInput {
+  role?: Role;
+  status?: UserStatus;
+}

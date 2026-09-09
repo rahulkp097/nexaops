@@ -37,4 +37,17 @@ describe('AuditLogsRepository', () => {
       '{}',
     ]);
   });
+
+  it('listByOrganization filters by organizationId, newest first, capped at the given limit', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    const repository = new AuditLogsRepository({ query } as unknown as Queryable);
+
+    await repository.listByOrganization('org-1', 100);
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toContain('WHERE organization_id = $1');
+    expect(sql).toContain('ORDER BY created_at DESC');
+    expect(sql).toContain('LIMIT $2');
+    expect(params).toEqual(['org-1', 100]);
+  });
 });
