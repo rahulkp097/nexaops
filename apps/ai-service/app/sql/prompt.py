@@ -1,5 +1,14 @@
 from app.sql.schema import ALLOWED_TABLE, SCHEMA_DESCRIPTION
 
+# Phase 20 (spec §29: "Include model/prompt/retrieval version in AI-cache
+# keys when necessary"): app/sql/service.py folds this into its cache key
+# alongside the model name, so a change to this prompt or the schema
+# description below can never serve a cached SQL result generated under
+# different semantics. Bump this whenever SYSTEM_PROMPT or
+# SCHEMA_DESCRIPTION changes in a way that could change what SQL gets
+# generated for the same question.
+SQL_PROMPT_VERSION = "v1"
+
 # This prompt is guidance, not the security boundary — spec §21 is explicit
 # that generated SQL "must be treated as an untrusted code-generation
 # problem." app/sql/validator.py enforces every rule below in code; a

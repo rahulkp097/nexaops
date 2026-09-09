@@ -111,6 +111,33 @@ async def test_query_sales_returns_a_trimmed_summary_not_full_line_items():
     }
 
 
+async def test_query_sales_is_served_from_cache_on_a_hit_without_calling_mock_business():
+    cached_result = {"orders": [{"id": "10291"}], "count": 1}
+    with patch("app.tools.business_tools.get_cached", new_callable=AsyncMock, return_value=cached_result), patch(
+        "app.tools.business_tools.business_client.list_orders", new_callable=AsyncMock
+    ) as mock_list:
+        result = await _registry().execute("query_sales", {"status": "DELAYED"}, _context())
+
+    mock_list.assert_not_awaited()
+    assert result.data == cached_result
+
+
+async def test_query_sales_populates_the_cache_on_a_miss():
+    orders = [{"id": "10291", "customerId": "CUST-1005", "status": "DELAYED", "total": 267, "placedAt": "2026-07-14"}]
+    context = _context()
+    with patch("app.tools.business_tools.get_cached", new_callable=AsyncMock, return_value=None), patch(
+        "app.tools.business_tools.set_cached", new_callable=AsyncMock
+    ) as mock_set, patch("app.tools.business_tools.business_client.list_orders", new_callable=AsyncMock) as mock_list:
+        mock_list.return_value = orders
+        await _registry().execute("query_sales", {"status": "DELAYED"}, context)
+
+    mock_set.assert_awaited_once()
+    key, value, ttl = mock_set.call_args.args
+    assert key == f"org:{context.organization_id}:analytics:query_sales:DELAYED:-:-"
+    assert value["count"] == 1
+    assert ttl == 300
+
+
 async def test_query_sales_rejects_an_unknown_status():
     result = await _registry().execute("query_sales", {"status": "ARCHIVED"}, _context())
 
@@ -138,6 +165,35 @@ async def test_calculate_metric_delayed_order_count_counts_orders_instead():
 
     mock_list.assert_awaited_once_with("DELAYED", None, None)
     assert result.data == {"metric": "delayed_order_count", "value": 2, "from": None, "to": None}
+
+
+async def test_calculate_metric_is_served_from_cache_on_a_hit_without_calling_mock_business():
+    cached_result = {"metric": "total_revenue", "value": 6035.8, "from": None, "to": None}
+    with patch("app.tools.business_tools.get_cached", new_callable=AsyncMock, return_value=cached_result), patch(
+        "app.tools.business_tools.business_client.get_revenue_analytics", new_callable=AsyncMock
+    ) as mock_analytics:
+        result = await _registry().execute("calculate_metric", {"metric": "total_revenue"}, _context())
+
+    mock_analytics.assert_not_awaited()
+    assert result.data == cached_result
+
+
+async def test_calculate_metric_cache_key_matches_specs_own_example_shape():
+    context = _context()
+    with patch("app.tools.business_tools.get_cached", new_callable=AsyncMock, return_value=None), patch(
+        "app.tools.business_tools.set_cached", new_callable=AsyncMock
+    ) as mock_set, patch(
+        "app.tools.business_tools.business_client.get_revenue_analytics", new_callable=AsyncMock
+    ) as mock_analytics:
+        mock_analytics.return_value = {"totalRevenue": 6035.8, "averageOrderValue": 188.62, "orderCount": 32}
+        await _registry().execute(
+            "calculate_metric",
+            {"metric": "total_revenue", "from_date": "2026-08-01", "to_date": "2026-08-31"},
+            context,
+        )
+
+    key = mock_set.call_args.args[0]
+    assert key == f"org:{context.organization_id}:analytics:total_revenue:2026-08-01:2026-08-31"
 
 
 async def test_calculate_metric_rejects_an_unsupported_metric_name():

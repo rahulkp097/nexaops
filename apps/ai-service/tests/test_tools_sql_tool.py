@@ -19,13 +19,14 @@ def _registry() -> ToolRegistry:
 
 
 async def test_run_sales_query_returns_the_structured_result_on_success():
+    context = _context()
     with patch("app.tools.sql_tool.run_sales_query", new_callable=AsyncMock) as mock_run:
         mock_run.return_value = SqlQueryResult(
             sql="SELECT COUNT(*) AS count FROM sales_orders LIMIT 100",
             rows=[{"count": 32}],
             row_count=1,
         )
-        result = await _registry().execute("run_sales_query", {"question": "How many orders?"}, _context())
+        result = await _registry().execute("run_sales_query", {"question": "How many orders?"}, context)
 
     assert result.ok is True
     assert result.data == {
@@ -34,7 +35,7 @@ async def test_run_sales_query_returns_the_structured_result_on_success():
         "rows": [{"count": 32}],
         "rowCount": 1,
     }
-    mock_run.assert_awaited_once_with("How many orders?")
+    mock_run.assert_awaited_once_with("How many orders?", context.organization_id)
 
 
 async def test_run_sales_query_returns_answered_false_on_a_controlled_failure_not_a_tool_error():

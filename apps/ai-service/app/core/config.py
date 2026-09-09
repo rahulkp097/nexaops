@@ -70,6 +70,15 @@ class Settings(BaseSettings):
     # LLM call that produces (and rolls forward) that summary.
     memory_summary_max_tokens: int = 400
 
+    # Phase 20 (spec §29): TTL for cached analytics/SQL results (app/core/cache.py).
+    # mock-business's dataset never actually changes at runtime (Phase 10:
+    # fixed seed, generated once at process startup), so correctness never
+    # depends on this value — it exists so a real, changing backend
+    # wouldn't serve indefinitely-stale data, per spec's "Use explicit TTLs."
+    cache_ttl_seconds: int = 300
+
+
+
 
 @lru_cache
 def get_settings() -> Settings:
