@@ -4,7 +4,7 @@ import anthropic
 import pytest
 
 from app.rag.errors import LlmRequestError, LlmUnavailableError
-from app.rag.llm_client import generate_answer, stream_answer
+from app.rag.llm_client import ToolUseRequest, create_message, generate_answer, stream_answer
 
 
 @pytest.fixture(autouse=True)
@@ -198,3 +198,93 @@ async def test_stream_answer_blank_api_key_raises_without_calling_the_sdk():
                 async for _ in stream_answer("system", [{"role": "user", "content": "q"}], max_tokens=100):
                     pass
             mock_client_cls.assert_not_called()
+
+
+def _mock_text_block(text: str):
+    return MagicMock(type="text", text=text)
+
+
+def _mock_tool_use_block(id_: str, name: str, tool_input: dict):
+    # `name=` can't be passed to the MagicMock() constructor — it's reserved
+    # for the mock's own repr, not an attribute — so it's set afterward.
+    block = MagicMock(type="tool_use", id=id_, input=tool_input)
+    block.name = name
+    return block
+
+
+async def test_create_message_does_not_send_tools_when_none_are_given():
+    with patch("app.rag.llm_client.get_settings", return_value=_mock_settings()):
+        with patch("app.rag.llm_client.anthropic.AsyncAnthropic") as mock_client_cls:
+            mock_response = MagicMock(
+                stop_reason="end_turn", content=[_mock_text_block("hi")], usage=MagicMock(input_tokens=5, output_tokens=2)
+            )
+            mock_client = MagicMock()
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            await create_message("system", [{"role": "user", "content": "q"}], max_tokens=100)
+
+            assert "tools" not in mock_client.messages.create.call_args.kwargs
+
+
+async def test_create_message_sends_tools_when_given():
+    with patch("app.rag.llm_client.get_settings", return_value=_mock_settings()):
+        with patch("app.rag.llm_client.anthropic.AsyncAnthropic") as mock_client_cls:
+            mock_response = MagicMock(
+                stop_reason="end_turn", content=[_mock_text_block("hi")], usage=MagicMock(input_tokens=5, output_tokens=2)
+            )
+            mock_client = MagicMock()
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            tools = [{"name": "get_order", "description": "...", "input_schema": {}}]
+            await create_message("system", [{"role": "user", "content": "q"}], max_tokens=100, tools=tools)
+
+            assert mock_client.messages.create.call_args.kwargs["tools"] == tools
+
+
+async def test_create_message_extracts_tool_use_requests_and_usage():
+    with patch("app.rag.llm_client.get_settings", return_value=_mock_settings()):
+        with patch("app.rag.llm_client.anthropic.AsyncAnthropic") as mock_client_cls:
+            mock_response = MagicMock(
+                stop_reason="tool_use",
+                content=[
+                    _mock_text_block("Let me check that."),
+                    _mock_tool_use_block("toolu_1", "get_order", {"order_id": "10291"}),
+                ],
+                usage=MagicMock(input_tokens=120, output_tokens=30),
+            )
+            mock_client = MagicMock()
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await create_message("system", [{"role": "user", "content": "q"}], max_tokens=100)
+
+            assert result.stop_reason == "tool_use"
+            assert result.text == "Let me check that."
+            assert result.tool_uses == [ToolUseRequest(id="toolu_1", name="get_order", input={"order_id": "10291"})]
+            assert result.input_tokens == 120
+            assert result.output_tokens == 30
+
+
+async def test_create_message_raw_content_round_trips_for_continuing_a_tool_use_turn():
+    with patch("app.rag.llm_client.get_settings", return_value=_mock_settings()):
+        with patch("app.rag.llm_client.anthropic.AsyncAnthropic") as mock_client_cls:
+            mock_response = MagicMock(
+                stop_reason="tool_use",
+                content=[
+                    _mock_text_block("Checking."),
+                    _mock_tool_use_block("toolu_1", "get_order", {"order_id": "10291"}),
+                ],
+                usage=MagicMock(input_tokens=10, output_tokens=5),
+            )
+            mock_client = MagicMock()
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await create_message("system", [{"role": "user", "content": "q"}], max_tokens=100)
+
+            assert result.raw_content == [
+                {"type": "text", "text": "Checking."},
+                {"type": "tool_use", "id": "toolu_1", "name": "get_order", "input": {"order_id": "10291"}},
+            ]

@@ -1,18 +1,9 @@
-from typing import Any, Literal
+from typing import Any
 from uuid import UUID
 
 from pydantic import Field
 
-from app.core.schemas import CamelModel
-
-
-class HistoryMessageDto(CamelModel):
-    """One prior conversation turn (Phase 8's "retrieve relevant history"),
-    supplied by the gateway from its conversations/messages tables. Kept to
-    plain role+content — summarization of long history is Phase 16's job."""
-
-    role: Literal["user", "assistant"]
-    content: str
+from app.core.schemas import CamelModel, HistoryMessageDto
 
 
 class RagQueryRequest(CamelModel):
