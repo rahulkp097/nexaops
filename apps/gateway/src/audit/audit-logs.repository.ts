@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PG_POOL } from '../database/pg-pool.provider';
 import { Queryable } from '../database/transaction.util';
-import { RecordAuditEventInput } from './audit-log.types';
+import { AuditLogRow, RecordAuditEventInput } from './audit-log.types';
 
 @Injectable()
 export class AuditLogsRepository {
@@ -19,5 +19,17 @@ export class AuditLogsRepository {
         JSON.stringify(input.metadata ?? {}),
       ],
     );
+  }
+
+  async listByOrganization(
+    organizationId: string,
+    limit: number,
+    queryable: Queryable = this.pool,
+  ): Promise<AuditLogRow[]> {
+    const result = await queryable.query<AuditLogRow>(
+      'SELECT * FROM audit_logs WHERE organization_id = $1 ORDER BY created_at DESC LIMIT $2',
+      [organizationId, limit],
+    );
+    return result.rows;
   }
 }
