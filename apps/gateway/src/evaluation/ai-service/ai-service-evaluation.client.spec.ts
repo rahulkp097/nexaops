@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { RequestContextService } from '../../observability/request-context.service';
 import { EvaluationCaseRow } from '../evaluation.types';
 import { AiServiceEvaluationClient } from './ai-service-evaluation.client';
 
@@ -24,9 +25,9 @@ describe('AiServiceEvaluationClient', () => {
     global.fetch = originalFetch;
   });
 
-  function makeClient(aiServiceUrl?: string) {
+  function makeClient(aiServiceUrl?: string, requestContext = new RequestContextService()) {
     const config = { get: jest.fn().mockReturnValue(aiServiceUrl) } as unknown as ConfigService;
-    return new AiServiceEvaluationClient(config);
+    return new AiServiceEvaluationClient(config, requestContext);
   }
 
   it('POSTs organization/user/role and cases mapped to camelCase field names', async () => {
@@ -90,5 +91,27 @@ describe('AiServiceEvaluationClient', () => {
     await expect(
       client.run({ organizationId: 'org-1', userId: 'user-1', role: 'ADMIN', cases: [makeCaseRow()] }),
     ).rejects.toThrow('502');
+  });
+
+  it('forwards the current request id as X-Request-Id when one is set', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ results: [], metrics: {}, model: '', provider: '' }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const requestContext = new RequestContextService();
+    const client = makeClient('http://ai-service:9000', requestContext);
+
+    await requestContext.run({ requestId: 'req-1' }, () =>
+      client.run({ organizationId: 'org-1', userId: 'user-1', role: 'ADMIN', cases: [makeCaseRow()] }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'req-1' },
+      }),
+    );
   });
 });

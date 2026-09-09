@@ -26,6 +26,32 @@ async def test_run_sales_query_wires_generate_validate_execute_in_order(
     assert result.row_count == 1
 
 
+@patch("app.sql.service.execute_readonly_query", new_callable=AsyncMock)
+@patch("app.sql.service.validate_and_rewrite")
+@patch("app.sql.service.generate_sql", new_callable=AsyncMock)
+async def test_run_sales_query_logs_row_count_on_success(mock_generate, mock_validate, mock_execute, caplog):
+    mock_generate.return_value = "SELECT COUNT(*) FROM sales_orders"
+    mock_validate.return_value = "SELECT COUNT(*) FROM sales_orders LIMIT 100"
+    mock_execute.return_value = [{"count": 32}]
+
+    with caplog.at_level("INFO", logger="app.sql.service"):
+        await run_sales_query("How many orders are there?")
+
+    assert any("SQL query executed" in r.message and "rows=1" in r.message for r in caplog.records)
+
+
+@patch("app.sql.service.validate_and_rewrite")
+@patch("app.sql.service.generate_sql", new_callable=AsyncMock)
+async def test_run_sales_query_logs_a_warning_when_validation_rejects_it(mock_generate, mock_validate, caplog):
+    mock_generate.return_value = "DROP TABLE sales_orders"
+    mock_validate.side_effect = SqlValidationError("Only SELECT statements are allowed")
+
+    with caplog.at_level("WARNING", logger="app.sql.service"), pytest.raises(SqlValidationError):
+        await run_sales_query("question")
+
+    assert any("rejected by validator" in r.message for r in caplog.records)
+
+
 @patch("app.sql.service.generate_sql", new_callable=AsyncMock)
 async def test_run_sales_query_propagates_a_generation_error(mock_generate):
     mock_generate.side_effect = SqlGenerationError("provider unavailable")

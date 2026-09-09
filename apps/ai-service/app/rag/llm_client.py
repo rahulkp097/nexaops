@@ -1,4 +1,5 @@
 import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -126,10 +127,26 @@ async def create_message(
     if tools:
         create_kwargs["tools"] = tools
 
+    start = time.monotonic()
     try:
         response = await _get_client().messages.create(**create_kwargs)
     except anthropic.APIError as exc:
         raise _map_error(exc, settings.ai_model) from exc
+    duration_ms = round((time.monotonic() - start) * 1000, 1)
+
+    # spec §27: "LLM provider/model. Token usage when available." — the one
+    # choke point every LLM call in the app (RAG, agent, SQL generation,
+    # conversation-memory summarization) goes through, so instrumenting it
+    # here covers all of them at once.
+    logger.info(
+        "LLM request completed: model=%s provider=%s stop_reason=%s input_tokens=%s output_tokens=%s duration_ms=%s",
+        settings.ai_model,
+        settings.ai_provider,
+        response.stop_reason,
+        response.usage.input_tokens,
+        response.usage.output_tokens,
+        duration_ms,
+    )
 
     text = "".join(block.text for block in response.content if block.type == "text").strip()
     tool_uses = [
@@ -166,6 +183,7 @@ async def stream_answer(
     _check_configured()
     settings = get_settings()
 
+    start = time.monotonic()
     yielded_any = False
     try:
         async with _get_client().messages.stream(
@@ -181,6 +199,18 @@ async def stream_answer(
             final_message = await stream.get_final_message()
     except anthropic.APIError as exc:
         raise _map_error(exc, settings.ai_model) from exc
+    duration_ms = round((time.monotonic() - start) * 1000, 1)
+
+    usage = getattr(final_message, "usage", None)
+    logger.info(
+        "LLM stream completed: model=%s provider=%s stop_reason=%s input_tokens=%s output_tokens=%s duration_ms=%s",
+        settings.ai_model,
+        settings.ai_provider,
+        final_message.stop_reason,
+        getattr(usage, "input_tokens", None),
+        getattr(usage, "output_tokens", None),
+        duration_ms,
+    )
 
     if final_message.stop_reason == "refusal" and not yielded_any:
         yield _REFUSAL_ANSWER

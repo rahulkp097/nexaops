@@ -1,3 +1,5 @@
+import logging
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID
@@ -10,6 +12,8 @@ from app.rag.retrieval import retrieve_top_chunks
 from app.rag.schemas import HistoryMessageDto, RagQueryResponse, SourceDto
 from app.rag.types import RagStreamEvent, RetrievedChunk
 
+logger = logging.getLogger(__name__)
+
 
 async def _retrieve_context(
     question: str,
@@ -17,6 +21,7 @@ async def _retrieve_context(
     metadata_filter: dict[str, Any] | None,
 ) -> tuple[list[RetrievedChunk], list[SourceDto]]:
     settings = get_settings()
+    start = time.monotonic()
     query_embedding = await embed_query(question)
     chunks = await retrieve_top_chunks(
         organization_id,
@@ -26,6 +31,13 @@ async def _retrieve_context(
         candidate_pool_size=settings.rag_candidate_pool_size,
         metadata_filter=metadata_filter,
     )
+    duration_ms = round((time.monotonic() - start) * 1000, 1)
+    # spec §27: "Retrieval latency. Number of retrieved chunks." — never the
+    # question text or chunk content itself, only counts/timing/ids.
+    logger.info(
+        "Retrieval completed: organization_id=%s chunks=%d duration_ms=%s", organization_id, len(chunks), duration_ms
+    )
+
     # sources is a direct 1:1 map of the retrieved chunks — never parsed
     # out of the model's prose — so it can never drift from what the
     # model actually saw as evidence.

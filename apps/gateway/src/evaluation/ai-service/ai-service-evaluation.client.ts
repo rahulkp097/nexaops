@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { withRequestId } from '../../observability/http-headers.util';
+import { RequestContextService } from '../../observability/request-context.service';
 import { EvaluationCaseRow, EvaluationCategory } from '../evaluation.types';
 
 export interface EvaluationCaseResultPayload {
@@ -22,7 +24,10 @@ export interface RunEvaluationPayload {
 
 @Injectable()
 export class AiServiceEvaluationClient {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly requestContext: RequestContextService,
+  ) {}
 
   // Calls apps/ai-service's POST /evaluation/run (Phase 17): executes every
   // case against its matching pipeline and scores it — a single case's LLM
@@ -38,7 +43,7 @@ export class AiServiceEvaluationClient {
     const baseUrl = this.config.get<string>('AI_SERVICE_URL') ?? 'http://localhost:8000';
     const response = await fetch(`${baseUrl}/evaluation/run`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withRequestId({ 'Content-Type': 'application/json' }, this.requestContext),
       body: JSON.stringify({
         organizationId: input.organizationId,
         userId: input.userId,
