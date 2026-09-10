@@ -126,6 +126,11 @@ services:
     build:
       context: .
       dockerfile: infra/docker/web.Dockerfile
+      args:
+        # The browser reaches the gateway on its host-mapped port, not the
+        # Docker-internal one — this has to be resolvable from wherever the
+        # browser actually runs, not from inside the compose network.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000/v1}
     restart: unless-stopped
     env_file: .env
     ports:
