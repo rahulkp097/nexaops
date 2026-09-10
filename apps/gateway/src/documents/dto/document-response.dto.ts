@@ -1,16 +1,8 @@
-import { DocumentRow, DocumentStatus } from '../document.types';
+import { DocumentResponseDto } from '@nexaops/shared-types';
+import { DocumentRow } from '../document.types';
 
-export interface DocumentResponseDto {
-  id: string;
-  filename: string;
-  mimeType: string;
-  size: number;
-  version: number;
-  status: DocumentStatus;
-  checksum: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
+// Canonical shape lives in @nexaops/shared-types (the public API contract).
+export type { DocumentResponseDto } from '@nexaops/shared-types';
 
 // Deliberately drops storage_key and organization_id from the public API surface.
 export function toDocumentResponseDto(row: DocumentRow): DocumentResponseDto {

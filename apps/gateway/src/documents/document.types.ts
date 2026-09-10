@@ -1,4 +1,8 @@
-export type DocumentStatus = 'PROCESSING' | 'READY' | 'FAILED';
+// Canonical definition lives in @nexaops/shared-types (the public API
+// contract) — re-exported here so internal gateway code keeps importing
+// from this file without drifting from that contract.
+export type { DocumentStatus } from '@nexaops/shared-types';
+import type { DocumentStatus } from '@nexaops/shared-types';
 
 export interface DocumentRow {
   id: string;

@@ -113,6 +113,28 @@ describe('ConversationsService', () => {
     });
   });
 
+  describe('getOne', () => {
+    it('returns the conversation scoped to the caller organization', async () => {
+      conversationsRepository.findByIdAndOrganization.mockResolvedValue(conversationRow);
+
+      const result = await service.getOne('conv-1', 'org-1');
+
+      expect(conversationsRepository.findByIdAndOrganization).toHaveBeenCalledWith('conv-1', 'org-1');
+      expect(result).toEqual({
+        id: 'conv-1',
+        title: 'Refund questions',
+        createdAt: conversationRow.created_at,
+        updatedAt: conversationRow.updated_at,
+      });
+    });
+
+    it('throws NotFoundException for a conversation belonging to a different org', async () => {
+      conversationsRepository.findByIdAndOrganization.mockResolvedValue(null);
+
+      await expect(service.getOne('conv-1', 'org-B')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   describe('list / listMessages cross-tenant access', () => {
     it('listMessages throws NotFoundException for a conversation belonging to a different org', async () => {
       conversationsRepository.findByIdAndOrganization.mockResolvedValue(null);

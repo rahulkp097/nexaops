@@ -15,9 +15,11 @@
 // "AI regression tests" bullet).
 
 const GATEWAY_URL = process.env.GATEWAY_URL ?? 'http://localhost:4000';
+// Phase 24: every resource route is versioned (/health stays unversioned).
+const API_URL = `${GATEWAY_URL}/v1`;
 
 async function fetchRuns(accessToken) {
-  const response = await fetch(`${GATEWAY_URL}/evaluation/runs`, {
+  const response = await fetch(`${API_URL}/evaluation/runs`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!response.ok) {
@@ -27,7 +29,7 @@ async function fetchRuns(accessToken) {
 }
 
 async function fetchRun(accessToken, runId) {
-  const response = await fetch(`${GATEWAY_URL}/evaluation/runs/${runId}`, {
+  const response = await fetch(`${API_URL}/evaluation/runs/${runId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!response.ok) {

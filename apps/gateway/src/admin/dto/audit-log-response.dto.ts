@@ -1,13 +1,8 @@
+import { AuditLogResponseDto } from '@nexaops/shared-types';
 import { AuditLogRow } from '../../audit/audit-log.types';
 
-export interface AuditLogResponseDto {
-  id: string;
-  userId: string | null;
-  action: string;
-  resource: string;
-  metadata: Record<string, unknown>;
-  createdAt: Date;
-}
+// Canonical shape lives in @nexaops/shared-types (the public API contract).
+export type { AuditLogResponseDto } from '@nexaops/shared-types';
 
 // Deliberately drops organization_id: the caller already scoped the query
 // to their own organization, so echoing it back is redundant.

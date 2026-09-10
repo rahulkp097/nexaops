@@ -1,20 +1,8 @@
-import { MessageRole, MessageRow, MessageSourceRow } from '../conversation.types';
+import { MessageResponseDto, SourceResponseDto } from '@nexaops/shared-types';
+import { MessageRow, MessageSourceRow } from '../conversation.types';
 
-export interface SourceResponseDto {
-  documentId: string | null;
-  chunkId: string | null;
-  filename: string;
-  page: number | null;
-  score: number;
-}
-
-export interface MessageResponseDto {
-  id: string;
-  role: MessageRole;
-  content: string;
-  createdAt: Date;
-  sources: SourceResponseDto[];
-}
+// Canonical shapes live in @nexaops/shared-types (the public API contract).
+export type { SourceResponseDto, MessageResponseDto } from '@nexaops/shared-types';
 
 export function toSourceResponseDto(row: MessageSourceRow): SourceResponseDto {
   return {

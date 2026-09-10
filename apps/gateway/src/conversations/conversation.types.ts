@@ -1,4 +1,8 @@
-export type MessageRole = 'USER' | 'ASSISTANT';
+// Canonical definition lives in @nexaops/shared-types (the public API
+// contract) — re-exported here so internal gateway code keeps importing
+// from this file without drifting from that contract.
+export type { MessageRole } from '@nexaops/shared-types';
+import type { MessageRole } from '@nexaops/shared-types';
 
 export interface ConversationRow {
   id: string;

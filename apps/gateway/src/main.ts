@@ -1,10 +1,19 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, VersioningType } from '@nestjs/common';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Phase 24 (spec §33: "Keep API contracts versioned"). URI versioning
+  // (not header/media-type) so the version is visible in every request
+  // without relying on a client to set anything beyond the URL — every
+  // resource controller added so far (auth/documents/conversations/admin/
+  // evaluation) has no explicit @Controller version, so defaultVersion
+  // applies to all of them uniformly; only the health probe opts out via
+  // VERSION_NEUTRAL.
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   // Phase 22 (spec §31: "Security headers"). This is a pure JSON/SSE API,
   // never an HTML renderer, so a strict default Content-Security-Policy

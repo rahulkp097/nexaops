@@ -1,13 +1,8 @@
-import { Role, UserRow, UserStatus } from '../../users/user.types';
+import { AdminUserResponseDto } from '@nexaops/shared-types';
+import { UserRow } from '../../users/user.types';
 
-export interface AdminUserResponseDto {
-  id: string;
-  email: string;
-  role: Role;
-  status: UserStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}
+// Canonical shape lives in @nexaops/shared-types (the public API contract).
+export type { AdminUserResponseDto } from '@nexaops/shared-types';
 
 // Deliberately drops password_hash and organization_id from the public API surface.
 export function toAdminUserResponseDto(row: UserRow): AdminUserResponseDto {

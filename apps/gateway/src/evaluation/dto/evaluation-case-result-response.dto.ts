@@ -1,17 +1,8 @@
-import { EvaluationCaseResultRow, EvaluationCategory } from '../evaluation.types';
+import { EvaluationCaseResultResponseDto } from '@nexaops/shared-types';
+import { EvaluationCaseResultRow } from '../evaluation.types';
 
-export interface EvaluationCaseResultResponseDto {
-  id: string;
-  caseId: string;
-  category: EvaluationCategory;
-  question: string;
-  passed: boolean;
-  latencyMs: number;
-  answer: string | null;
-  scores: Record<string, unknown>;
-  error: string | null;
-  createdAt: Date;
-}
+// Canonical shape lives in @nexaops/shared-types (the public API contract).
+export type { EvaluationCaseResultResponseDto } from '@nexaops/shared-types';
 
 export function toEvaluationCaseResultResponseDto(row: EvaluationCaseResultRow): EvaluationCaseResultResponseDto {
   return {

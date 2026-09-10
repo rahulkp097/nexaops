@@ -51,6 +51,11 @@ export class ConversationsService {
     return rows.map(toConversationResponseDto);
   }
 
+  async getOne(conversationId: string, organizationId: string): Promise<ConversationResponseDto> {
+    const conversation = await this.requireConversation(conversationId, organizationId);
+    return toConversationResponseDto(conversation);
+  }
+
   async listMessages(conversationId: string, organizationId: string): Promise<MessageResponseDto[]> {
     await this.requireConversation(conversationId, organizationId);
     const rows = await this.conversationsRepository.listByConversation(conversationId);

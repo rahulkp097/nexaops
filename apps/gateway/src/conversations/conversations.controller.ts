@@ -28,6 +28,14 @@ export class ConversationsController {
     return this.conversationsService.list(user);
   }
 
+  @Get(':id')
+  getOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<ConversationResponseDto> {
+    return this.conversationsService.getOne(id, user.organizationId);
+  }
+
   @Get(':id/messages')
   listMessages(
     @Param('id', ParseUUIDPipe) id: string,

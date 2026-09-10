@@ -43,6 +43,8 @@ function loadEnvFile(path) {
 
 const dotenv = loadEnvFile(join(REPO_ROOT, '.env'));
 const GATEWAY_URL = process.env.GATEWAY_URL ?? 'http://localhost:4000';
+// Phase 24: every resource route is versioned (/health stays unversioned).
+const API_URL = `${GATEWAY_URL}/v1`;
 const DATABASE_APP_URL =
   process.env.DATABASE_APP_URL ??
   dotenv.DATABASE_APP_URL ??
@@ -51,7 +53,7 @@ const DATABASE_APP_URL =
 const SEED_PASSWORD = 'Ev4luation-Seed-Password!';
 
 async function registerOrLogin(email, organizationName) {
-  const registerResponse = await fetch(`${GATEWAY_URL}/auth/register`, {
+  const registerResponse = await fetch(`${API_URL}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password: SEED_PASSWORD, organizationName }),
@@ -64,7 +66,7 @@ async function registerOrLogin(email, organizationName) {
     throw new Error(`Registering ${email} failed with status ${registerResponse.status}`);
   }
 
-  const loginResponse = await fetch(`${GATEWAY_URL}/auth/login`, {
+  const loginResponse = await fetch(`${API_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password: SEED_PASSWORD }),
@@ -80,7 +82,7 @@ async function uploadDocument(accessToken, filename, content) {
   const form = new FormData();
   form.append('file', new Blob([content], { type: 'text/plain' }), filename);
 
-  const uploadResponse = await fetch(`${GATEWAY_URL}/documents`, {
+  const uploadResponse = await fetch(`${API_URL}/documents`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
     body: form,
@@ -92,7 +94,7 @@ async function uploadDocument(accessToken, filename, content) {
 
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    const statusResponse = await fetch(`${GATEWAY_URL}/documents/${document.id}`, {
+    const statusResponse = await fetch(`${API_URL}/documents/${document.id}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const current = await statusResponse.json();
@@ -317,7 +319,7 @@ async function main() {
     const cases = buildCases(orgA.organizationId);
     const { inserted, updated } = await upsertCases(pool, cases);
     console.log(`Evaluation cases: ${inserted} inserted, ${updated} updated (total ${cases.length}).`);
-    console.log(`\nDone. Trigger a run with: POST ${GATEWAY_URL}/evaluation/runs as an ADMIN in organization ${orgA.organizationId}.`);
+    console.log(`\nDone. Trigger a run with: POST ${API_URL}/evaluation/runs as an ADMIN in organization ${orgA.organizationId}.`);
   } finally {
     await pool.end();
   }
