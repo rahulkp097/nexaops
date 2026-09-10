@@ -1,18 +1,10 @@
-// Mirrors the ai-service Literal in app/evaluation/types.py and the
-// Postgres enum `evaluation_case_category`.
-export type EvaluationCategory =
-  | 'DOCUMENT_QA'
-  | 'NO_ANSWER'
-  | 'EXACT_ID'
-  | 'MULTI_HOP'
-  | 'SQL'
-  | 'BUSINESS_API'
-  | 'COMBINED'
-  | 'AGENT_MULTI_STEP'
-  | 'PROMPT_INJECTION'
-  | 'CROSS_TENANT';
-
-export type EvaluationRunStatus = 'RUNNING' | 'COMPLETED' | 'FAILED';
+// Canonical definitions live in @nexaops/shared-types (the public API
+// contract) — re-exported here so internal gateway code keeps importing
+// from this file without drifting from that contract. Also mirrors the
+// ai-service Literal in app/evaluation/types.py and the Postgres enum
+// `evaluation_case_category`.
+export type { EvaluationCategory, EvaluationRunStatus } from '@nexaops/shared-types';
+import type { EvaluationCategory, EvaluationRunStatus } from '@nexaops/shared-types';
 
 export interface EvaluationCaseRow {
   id: string;

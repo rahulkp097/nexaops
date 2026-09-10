@@ -48,6 +48,11 @@ scripts/           Dev/ops scripts
    curl http://localhost:4200/health
    ```
 
+The gateway's resource routes (auth/documents/conversations/admin/evaluation) are
+versioned under `/v1` (e.g. `POST http://localhost:4000/v1/auth/login`) — `/health` is
+the one deliberately unversioned exception. See `docs/api/contract.md` for the full
+route list and how request/response types are shared via `packages/shared-types`.
+
 ## Running services outside Docker (development)
 
 ```bash

@@ -1,5 +1,8 @@
-export type Role = 'ADMIN' | 'MANAGER' | 'EMPLOYEE';
-export type UserStatus = 'ACTIVE' | 'DISABLED';
+// Canonical definition lives in @nexaops/shared-types (the public API
+// contract) — re-exported here so internal gateway code keeps importing
+// from this file without drifting from that contract.
+export type { Role, UserStatus } from '@nexaops/shared-types';
+import type { Role, UserStatus } from '@nexaops/shared-types';
 
 export interface UserRow {
   id: string;

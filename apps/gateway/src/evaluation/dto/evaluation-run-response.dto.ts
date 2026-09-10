@@ -1,15 +1,8 @@
-import { EvaluationRunRow, EvaluationRunStatus } from '../evaluation.types';
+import { EvaluationRunResponseDto } from '@nexaops/shared-types';
+import { EvaluationRunRow } from '../evaluation.types';
 
-export interface EvaluationRunResponseDto {
-  id: string;
-  status: EvaluationRunStatus;
-  model: string | null;
-  provider: string | null;
-  metrics: Record<string, unknown> | null;
-  error: string | null;
-  startedAt: Date;
-  completedAt: Date | null;
-}
+// Canonical shape lives in @nexaops/shared-types (the public API contract).
+export type { EvaluationRunResponseDto } from '@nexaops/shared-types';
 
 // Deliberately drops organization_id/triggered_by_user_id — the caller
 // already scoped the query to their own organization, same convention as

@@ -1,6 +1,7 @@
+import { RegisterRequest } from '@nexaops/shared-types';
 import { IsEmail, IsNotEmpty, IsString, MaxLength, MinLength } from 'class-validator';
 
-export class RegisterDto {
+export class RegisterDto implements RegisterRequest {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)

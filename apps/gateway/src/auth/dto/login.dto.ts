@@ -1,6 +1,7 @@
+import { LoginRequest } from '@nexaops/shared-types';
 import { IsEmail, IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
-export class LoginDto {
+export class LoginDto implements LoginRequest {
   @IsEmail()
   @MaxLength(255)
   email!: string;

@@ -1,11 +1,8 @@
+import { ConversationResponseDto } from '@nexaops/shared-types';
 import { ConversationRow } from '../conversation.types';
 
-export interface ConversationResponseDto {
-  id: string;
-  title: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
+// Canonical shape lives in @nexaops/shared-types (the public API contract).
+export type { ConversationResponseDto } from '@nexaops/shared-types';
 
 // Deliberately drops organization_id and user_id from the public API surface.
 export function toConversationResponseDto(row: ConversationRow): ConversationResponseDto {

@@ -28,6 +28,8 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 
 const GATEWAY_URL = process.env.GATEWAY_URL ?? 'http://localhost:4000';
+// Phase 24: every resource route is versioned (/health stays unversioned).
+const API_URL = `${GATEWAY_URL}/v1`;
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL ?? 'http://localhost:8000';
 const DATABASE_APP_URL =
   process.env.DATABASE_APP_URL ?? 'postgresql://nexaops_app:dev-app-password@localhost:55432/nexaops';
@@ -47,7 +49,7 @@ function check(label, condition, detail = '') {
 }
 
 async function registerOrLogin(email, organizationName) {
-  const registerResponse = await fetch(`${GATEWAY_URL}/auth/register`, {
+  const registerResponse = await fetch(`${API_URL}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password: PASSWORD, organizationName }),
@@ -59,7 +61,7 @@ async function registerOrLogin(email, organizationName) {
   if (registerResponse.status !== 409) {
     throw new Error(`Registering ${email} failed with status ${registerResponse.status}`);
   }
-  const loginResponse = await fetch(`${GATEWAY_URL}/auth/login`, {
+  const loginResponse = await fetch(`${API_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password: PASSWORD }),
@@ -75,7 +77,7 @@ async function uploadDocument(accessToken, filename, content) {
   const form = new FormData();
   form.append('file', new Blob([content], { type: 'text/plain' }), filename);
 
-  const uploadResponse = await fetch(`${GATEWAY_URL}/documents`, {
+  const uploadResponse = await fetch(`${API_URL}/documents`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
     body: form,
@@ -87,7 +89,7 @@ async function uploadDocument(accessToken, filename, content) {
 
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    const statusResponse = await fetch(`${GATEWAY_URL}/documents/${document.id}`, {
+    const statusResponse = await fetch(`${API_URL}/documents/${document.id}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const current = await statusResponse.json();
@@ -113,14 +115,14 @@ function parseSseEvents(body) {
 }
 
 async function askDocumentQuestion(accessToken, question) {
-  const createResponse = await fetch(`${GATEWAY_URL}/conversations`, {
+  const createResponse = await fetch(`${API_URL}/conversations`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
   });
   const conversation = await createResponse.json();
 
-  await fetch(`${GATEWAY_URL}/conversations/${conversation.id}/messages`, {
+  await fetch(`${API_URL}/conversations/${conversation.id}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ content: question }),
@@ -132,7 +134,7 @@ async function askDocumentQuestion(accessToken, question) {
   // back over GET .../messages.
   await new Promise((resolve) => setTimeout(resolve, 3_000));
 
-  const streamResponse = await fetch(`${GATEWAY_URL}/conversations/${conversation.id}/stream`, {
+  const streamResponse = await fetch(`${API_URL}/conversations/${conversation.id}/stream`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (streamResponse.status === 404) {
@@ -216,9 +218,9 @@ async function main() {
   check('registered/logged in and received an access token', Boolean(admin.accessToken));
 
   console.log('\n2. Attempt unauthorized access');
-  const noTokenResponse = await fetch(`${GATEWAY_URL}/conversations`);
+  const noTokenResponse = await fetch(`${API_URL}/conversations`);
   check('GET /conversations with no token is rejected (401)', noTokenResponse.status === 401);
-  const badTokenResponse = await fetch(`${GATEWAY_URL}/conversations`, {
+  const badTokenResponse = await fetch(`${API_URL}/conversations`, {
     headers: { Authorization: 'Bearer not-a-real-token' },
   });
   check('GET /conversations with a garbage token is rejected (401)', badTokenResponse.status === 401);
@@ -259,12 +261,12 @@ async function main() {
   console.log('\n7. Ask SQL / business API / combined questions (via a real evaluation run — chat itself');
   console.log('   does not route through tools/agent yet, a known documented gap)');
   await seedEvaluationCases(admin.organizationId);
-  const runResponse = await fetch(`${GATEWAY_URL}/evaluation/runs`, {
+  const runResponse = await fetch(`${API_URL}/evaluation/runs`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${admin.accessToken}` },
   });
   const run = await runResponse.json();
-  const runDetailResponse = await fetch(`${GATEWAY_URL}/evaluation/runs/${run.id}`, {
+  const runDetailResponse = await fetch(`${API_URL}/evaluation/runs/${run.id}`, {
     headers: { Authorization: `Bearer ${admin.accessToken}` },
   });
   const runDetail = await runDetailResponse.json();
