@@ -14,3 +14,11 @@ venv/
 coverage/
 .pytest_cache/
 .claude/
+
+# Local embedding-model cache (apps/ai-service, services/document-worker) —
+# downloaded on first use, not something to commit.
+.cache/
+
+# Host-side fixture storage for integration tests (Phase 21) that write
+# and read real files without the real upload flow.
+storage-integration-test/

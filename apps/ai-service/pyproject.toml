@@ -6,3 +6,9 @@ target-version = "py311"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# Phase 21 (spec §30): integration tests hit the real docker-compose stack
+# (Postgres/Redis/mock-business) rather than mocks — excluded from the
+# default `pytest` run (kept fast, infra-independent) and run explicitly
+# with `pytest -m integration` once `docker compose up -d` is running.
+markers = ["integration: requires the real local stack (docker compose up -d)"]
+addopts = "-m 'not integration'"
