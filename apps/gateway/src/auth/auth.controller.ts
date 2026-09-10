@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -11,17 +12,25 @@ import { AuthService } from './auth.service';
 import { RequestMeta } from './request-meta.type';
 import { RequestUser } from './types/request-user.type';
 
+// spec §31 ("Rate limiting"): tighter than AppModule's global default on
+// these three specifically — register/login/refresh are the unauthenticated
+// routes brute-force/credential-stuffing/account-enumeration actually
+// target, so they get their own budget instead of sharing the general one.
+const AUTH_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
+
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Throttle(AUTH_THROTTLE)
   @Post('register')
   register(@Body() dto: RegisterDto, @Req() req: Request): Promise<AuthResponseDto> {
     return this.authService.register(dto, requestMeta(req));
   }
 
   @Public()
+  @Throttle(AUTH_THROTTLE)
   @HttpCode(200)
   @Post('login')
   login(@Body() dto: LoginDto, @Req() req: Request): Promise<AuthResponseDto> {
@@ -29,6 +38,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle(AUTH_THROTTLE)
   @HttpCode(200)
   @Post('refresh')
   refresh(@Body() dto: RefreshDto, @Req() req: Request): Promise<AuthResponseDto> {
