@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20.20.2-alpine
 WORKDIR /app
 COPY package.json ./
 COPY services/mock-business/package.json services/mock-business/package.json
