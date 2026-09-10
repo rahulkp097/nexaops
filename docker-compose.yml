@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:0.8.6-pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: nexaops
@@ -22,7 +22,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.11-alpine
     restart: unless-stopped
     ports:
       # Host port remapped to 56379: this machine already runs a native
@@ -35,7 +35,7 @@ services:
       retries: 10
 
   rabbitmq:
-    image: rabbitmq:4-management
+    image: rabbitmq:4.3.5-management
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: nexaops
