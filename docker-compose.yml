@@ -136,7 +136,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
 
 volumes:
   postgres_data:

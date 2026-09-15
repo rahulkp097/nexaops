@@ -76,3 +76,7 @@ cd apps/ai-service && pytest
 ## Build sequence
 
 This project is built phase by phase. See `BUILD_PLAN.md` for the full sequence and current status. Phase 0 (this scaffold) is complete when all Docker Compose containers are healthy and all application services start locally.
+
+## Deployment
+
+`infra/docker/*.Dockerfile` are production-hardened (multi-stage, non-root, health-checked). See `docs/deployment/runbook.md` for the real-deployment order of operations and `.env.production.example` for the production environment template — provisioning real infrastructure is a deliberate follow-up, not something this repository does on its own.
