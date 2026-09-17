@@ -124,6 +124,33 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
               next[next.length - 1] = { ...last, content: last.content + event.data.text };
               return next;
             });
+          } else if (event.event === 'tool_call_started') {
+            const { name } = event.data;
+            setMessages((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              if (!last) return prev;
+              next[next.length - 1] = { ...last, toolActivity: [...(last.toolActivity ?? []), { name, status: 'running' }] };
+              return next;
+            });
+          } else if (event.event === 'tool_call_finished') {
+            const { ok } = event.data;
+            setMessages((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              if (!last?.toolActivity) return prev;
+              // Tool calls execute sequentially in the agent loop (one
+              // started/finished pair completes before the next call
+              // starts), so the most recent "running" entry is always the
+              // one this "finished" event belongs to.
+              const toolActivity = [...last.toolActivity];
+              const runningIndex = toolActivity.map((entry) => entry.status).lastIndexOf('running');
+              if (runningIndex !== -1) {
+                toolActivity[runningIndex] = { ...toolActivity[runningIndex], status: ok ? 'done' : 'failed' };
+              }
+              next[next.length - 1] = { ...last, toolActivity };
+              return next;
+            });
           } else if (event.event === 'message_complete') {
             const complete = event.data;
             setMessages((prev) => {

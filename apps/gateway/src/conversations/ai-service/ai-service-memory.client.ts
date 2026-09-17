@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { withRequestId } from '../../observability/http-headers.util';
 import { RequestContextService } from '../../observability/request-context.service';
-import { RagHistoryMessage } from './ai-service-rag.client';
+import { HistoryMessage } from './history-message.type';
 
 // Phase 19 (spec §28: "Timeouts on external/model calls"): a short,
 // non-streaming call bounded well under a minute in practice
@@ -19,7 +19,7 @@ export class AiServiceMemoryClient {
 
   // Calls apps/ai-service's POST /memory/summarize (Phase 16): folds the
   // given messages into (or starts) a running conversation summary.
-  async summarize(input: { previousSummary: string | null; messages: RagHistoryMessage[] }): Promise<string> {
+  async summarize(input: { previousSummary: string | null; messages: HistoryMessage[] }): Promise<string> {
     const baseUrl = this.config.get<string>('AI_SERVICE_URL') ?? 'http://localhost:8000';
     const response = await fetch(`${baseUrl}/memory/summarize`, {
       method: 'POST',

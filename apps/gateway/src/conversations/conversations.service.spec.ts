@@ -2,8 +2,8 @@ import { ConflictException, MessageEvent, NotFoundException } from '@nestjs/comm
 import { Pool } from 'pg';
 import { firstValueFrom, ReplaySubject } from 'rxjs';
 import { toArray } from 'rxjs/operators';
+import { AiServiceAgentClient } from './ai-service/ai-service-agent.client';
 import { AiServiceMemoryClient } from './ai-service/ai-service-memory.client';
-import { AiServiceRagClient } from './ai-service/ai-service-rag.client';
 import { ChatStreamRegistry } from './chat-stream.registry';
 import { ConversationsRepository } from './conversations.repository';
 import { ConversationsService } from './conversations.service';
@@ -47,7 +47,7 @@ describe('ConversationsService', () => {
       | 'touchUpdatedAt'
     >
   >;
-  let aiServiceRagClient: jest.Mocked<Pick<AiServiceRagClient, 'streamQuery'>>;
+  let aiServiceAgentClient: jest.Mocked<Pick<AiServiceAgentClient, 'streamRun'>>;
   let aiServiceMemoryClient: jest.Mocked<Pick<AiServiceMemoryClient, 'summarize'>>;
   let chatStreamRegistry: ChatStreamRegistry;
   let pool: ReturnType<typeof makePool>;
@@ -78,7 +78,7 @@ describe('ConversationsService', () => {
       listSourcesByMessageIds: jest.fn(),
       touchUpdatedAt: jest.fn(),
     };
-    aiServiceRagClient = { streamQuery: jest.fn() };
+    aiServiceAgentClient = { streamRun: jest.fn() };
     aiServiceMemoryClient = { summarize: jest.fn() };
     chatStreamRegistry = new ChatStreamRegistry();
     capturedSubject = null;
@@ -94,7 +94,7 @@ describe('ConversationsService', () => {
     service = new ConversationsService(
       pool.pool,
       conversationsRepository as unknown as ConversationsRepository,
-      aiServiceRagClient as unknown as AiServiceRagClient,
+      aiServiceAgentClient as unknown as AiServiceAgentClient,
       aiServiceMemoryClient as unknown as AiServiceMemoryClient,
       chatStreamRegistry,
     );
@@ -201,7 +201,7 @@ describe('ConversationsService', () => {
       });
       // The assistant pipeline never resolves within this test — proves
       // postMessage doesn't await it.
-      aiServiceRagClient.streamQuery.mockImplementation(async function* () {
+      aiServiceAgentClient.streamRun.mockImplementation(async function* () {
         await new Promise(() => undefined);
         yield undefined as never;
       });
@@ -235,7 +235,7 @@ describe('ConversationsService', () => {
       expect(chatStreamRegistry.start('conv-1')).not.toBeNull();
     });
 
-    it('streams message_start, forwards source/token events, then persists and emits message_complete', async () => {
+    it('streams message_start, forwards tool_call_started/finished events, extracts citations from search_documents, then persists and emits message_complete', async () => {
       conversationsRepository.findByIdAndOrganization.mockResolvedValue(conversationRow);
       conversationsRepository.listRecentByConversation.mockResolvedValue([
         {
@@ -280,32 +280,58 @@ describe('ConversationsService', () => {
           created_at: new Date(),
         },
       ]);
-      aiServiceRagClient.streamQuery.mockImplementation(async function* () {
+      aiServiceAgentClient.streamRun.mockImplementation(async function* () {
         yield {
-          event: 'source' as const,
-          data: { documentId: 'doc-1', chunkId: 'chunk-1', filename: 'policy.pdf', page: 4, score: 0.9 },
+          event: 'tool_call_started' as const,
+          data: { name: 'search_documents', arguments: { query: 'refund policy' } },
         };
-        yield { event: 'token' as const, data: { text: 'Refunds ' } };
-        yield { event: 'token' as const, data: { text: 'take 30 days.' } };
+        yield {
+          event: 'tool_call_finished' as const,
+          data: {
+            name: 'search_documents',
+            ok: true,
+            result: {
+              query: 'refund policy',
+              results: [{ documentId: 'doc-1', chunkId: 'chunk-1', filename: 'policy.pdf', page: 4, score: 0.9 }],
+            },
+            errorCode: null,
+          },
+        };
         yield {
           event: 'done' as const,
-          data: { answer: 'Refunds take 30 days.', model: 'claude-sonnet-5', provider: 'anthropic' },
+          data: {
+            answer: 'Refunds take 30 days.',
+            model: 'claude-sonnet-5',
+            provider: 'anthropic',
+            stoppedReason: 'end_turn',
+            iterations: 2,
+            toolCalls: [],
+          },
         };
       });
 
       await service.postMessage('conv-1', 'What is the refund policy?', user);
 
-      // aiServiceRagClient receives the just-fetched history — excluding the
-      // message about to be inserted — as lowercase role turns.
-      expect(aiServiceRagClient.streamQuery).toHaveBeenCalledWith({
+      // aiServiceAgentClient receives the just-fetched history — excluding
+      // the message about to be inserted — as lowercase role turns, plus
+      // the caller's userId/role for tool authorization.
+      expect(aiServiceAgentClient.streamRun).toHaveBeenCalledWith({
         question: 'What is the refund policy?',
         organizationId: 'org-1',
+        userId: 'user-1',
+        role: 'EMPLOYEE',
         history: [{ role: 'user', content: 'Hi' }],
         conversationSummary: null,
       });
 
       const events = await firstValueFrom(capturedSubject!.pipe(toArray()));
-      expect(events.map((e) => e.type)).toEqual(['message_start', 'source', 'token', 'token', 'message_complete']);
+      expect(events.map((e) => e.type)).toEqual([
+        'message_start',
+        'tool_call_started',
+        'tool_call_finished',
+        'source',
+        'message_complete',
+      ]);
       const completeEvent = events[events.length - 1].data as { content: string; sources: unknown[] };
       expect(completeEvent.content).toBe('Refunds take 30 days.');
       expect(completeEvent.sources).toHaveLength(1);
@@ -347,7 +373,7 @@ describe('ConversationsService', () => {
         provider: null,
         created_at: new Date(),
       });
-      aiServiceRagClient.streamQuery.mockImplementation(async function* () {
+      aiServiceAgentClient.streamRun.mockImplementation(async function* () {
         yield { event: 'error' as const, data: { message: 'AI provider temporarily unavailable', retryable: true } };
       });
 
@@ -372,7 +398,7 @@ describe('ConversationsService', () => {
         provider: null,
         created_at: new Date(),
       });
-      aiServiceRagClient.streamQuery.mockImplementation(async function* () {
+      aiServiceAgentClient.streamRun.mockImplementation(async function* () {
         throw new Error('network error');
         // eslint-disable-next-line no-unreachable
         yield undefined as never;
@@ -397,8 +423,11 @@ describe('ConversationsService', () => {
         provider: null,
         created_at: new Date(),
       });
-      aiServiceRagClient.streamQuery.mockImplementation(async function* () {
-        yield { event: 'done' as const, data: { answer: 'answer', model: 'claude-sonnet-5', provider: 'anthropic' } };
+      aiServiceAgentClient.streamRun.mockImplementation(async function* () {
+        yield {
+          event: 'done' as const,
+          data: { answer: 'answer', model: 'claude-sonnet-5', provider: 'anthropic', stoppedReason: 'end_turn', iterations: 1, toolCalls: [] },
+        };
       });
     }
 
@@ -412,7 +441,7 @@ describe('ConversationsService', () => {
 
       expect(conversationsRepository.listMessageRange).not.toHaveBeenCalled();
       expect(aiServiceMemoryClient.summarize).not.toHaveBeenCalled();
-      expect(aiServiceRagClient.streamQuery).toHaveBeenCalledWith(
+      expect(aiServiceAgentClient.streamRun).toHaveBeenCalledWith(
         expect.objectContaining({ conversationSummary: null }),
       );
     });
@@ -447,7 +476,7 @@ describe('ConversationsService', () => {
         'The user asked about the refund window.',
         1,
       );
-      expect(aiServiceRagClient.streamQuery).toHaveBeenCalledWith(
+      expect(aiServiceAgentClient.streamRun).toHaveBeenCalledWith(
         expect.objectContaining({ conversationSummary: 'The user asked about the refund window.' }),
       );
     });
@@ -476,7 +505,7 @@ describe('ConversationsService', () => {
       await service.postMessage('conv-1', 'question', user);
 
       expect(conversationsRepository.updateSummary).not.toHaveBeenCalled();
-      expect(aiServiceRagClient.streamQuery).toHaveBeenCalledWith(
+      expect(aiServiceAgentClient.streamRun).toHaveBeenCalledWith(
         expect.objectContaining({ conversationSummary: 'Previously: the user asked about order 10291.' }),
       );
       // The failed summarization never blocked persisting/answering the message.

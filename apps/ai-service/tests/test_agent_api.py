@@ -175,3 +175,77 @@ def test_run_forwards_conversation_summary_to_the_orchestrator(mock_run_agent, *
 
     args = mock_run_agent.call_args.args
     assert args[3] == "The user previously asked about order 10291."
+
+
+def _parse_sse(body: str) -> list[tuple[str, dict]]:
+    import json
+
+    events = []
+    for block in body.strip().split("\n\n"):
+        lines = block.splitlines()
+        event = next(line.removeprefix("event: ") for line in lines if line.startswith("event: "))
+        data = next(line.removeprefix("data: ") for line in lines if line.startswith("data: "))
+        events.append((event, json.loads(data)))
+    return events
+
+
+@patch("app.main.init_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_redis_client", new_callable=AsyncMock)
+@patch("app.main.close_redis_client", new_callable=AsyncMock)
+@patch("app.main.init_embedding_model", new_callable=AsyncMock)
+@patch("app.api.agent.run_agent_stream")
+def test_run_stream_forwards_events_as_sse(mock_run_agent_stream, *_mocks):
+    from app.agents.types import AgentStreamEvent
+
+    async def fake_stream(*_args, **_kwargs):
+        yield AgentStreamEvent(event="tool_call_started", data={"name": "get_order", "arguments": {"order_id": "10291"}})
+        yield AgentStreamEvent(event="tool_call_finished", data={"name": "get_order", "ok": True, "result": {"status": "DELAYED"}, "errorCode": None})
+        yield AgentStreamEvent(event="done", data={"answer": "Delayed.", "stoppedReason": "end_turn", "iterations": 2, "toolCalls": [], "model": "claude-sonnet-5", "provider": "anthropic"})
+
+    mock_run_agent_stream.side_effect = fake_stream
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/agent/run/stream",
+            json={"question": "Why was order 10291 delayed?", "organizationId": str(uuid4()), "userId": str(uuid4()), "role": "MANAGER"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = _parse_sse(response.text)
+    assert events == [
+        ("tool_call_started", {"name": "get_order", "arguments": {"order_id": "10291"}}),
+        ("tool_call_finished", {"name": "get_order", "ok": True, "result": {"status": "DELAYED"}, "errorCode": None}),
+        ("done", {"answer": "Delayed.", "stoppedReason": "end_turn", "iterations": 2, "toolCalls": [], "model": "claude-sonnet-5", "provider": "anthropic"}),
+    ]
+
+
+@patch("app.main.init_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.close_readonly_db_pool", new_callable=AsyncMock)
+@patch("app.main.init_redis_client", new_callable=AsyncMock)
+@patch("app.main.close_redis_client", new_callable=AsyncMock)
+@patch("app.main.init_embedding_model", new_callable=AsyncMock)
+@patch("app.api.agent.run_agent_stream")
+def test_run_stream_maps_llm_unavailable_to_an_error_event(mock_run_agent_stream, *_mocks):
+    async def fake_stream(*_args, **_kwargs):
+        raise LlmUnavailableError("rate limited")
+        yield  # pragma: no cover - makes this an async generator function
+
+    mock_run_agent_stream.side_effect = fake_stream
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/agent/run/stream",
+            json={"question": "question", "organizationId": str(uuid4()), "userId": str(uuid4()), "role": "ADMIN"},
+        )
+
+    # The HTTP status is already 200 by the time the error occurs (streaming
+    # has started) — the failure surfaces as an `error` SSE event instead.
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    assert events == [("error", {"message": "AI provider temporarily unavailable", "retryable": True})]

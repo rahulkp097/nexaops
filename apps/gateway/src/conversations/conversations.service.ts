@@ -12,14 +12,15 @@ import { Observable, ReplaySubject } from 'rxjs';
 import { RequestUser } from '../auth/types/request-user.type';
 import { PG_POOL } from '../database/pg-pool.provider';
 import { withTransaction } from '../database/transaction.util';
+import { AiServiceAgentClient } from './ai-service/ai-service-agent.client';
 import { AiServiceMemoryClient } from './ai-service/ai-service-memory.client';
-import { AiServiceRagClient, RagHistoryMessage, RagSourceEventData } from './ai-service/ai-service-rag.client';
+import { HistoryMessage } from './ai-service/history-message.type';
 import { ChatStreamRegistry } from './chat-stream.registry';
 import { CONVERSATION_HISTORY_LIMIT } from './conversations.constants';
 import { ConversationsRepository } from './conversations.repository';
 import { ConversationRow, MessageRow } from './conversation.types';
 import { ConversationResponseDto, toConversationResponseDto } from './dto/conversation-response.dto';
-import { MessageResponseDto, toMessageResponseDto } from './dto/message-response.dto';
+import { MessageResponseDto, SourceResponseDto, toMessageResponseDto } from './dto/message-response.dto';
 
 @Injectable()
 export class ConversationsService {
@@ -28,7 +29,7 @@ export class ConversationsService {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
     private readonly conversationsRepository: ConversationsRepository,
-    private readonly aiServiceRagClient: AiServiceRagClient,
+    private readonly aiServiceAgentClient: AiServiceAgentClient,
     private readonly aiServiceMemoryClient: AiServiceMemoryClient,
     private readonly chatStreamRegistry: ChatStreamRegistry,
   ) {}
@@ -107,7 +108,7 @@ export class ConversationsService {
     }
 
     const assistantMessageId = randomUUID();
-    this.runAssistantResponse(conversation, subject, assistantMessageId, content, history, conversationSummary).catch(
+    this.runAssistantResponse(conversation, subject, assistantMessageId, content, history, conversationSummary, user).catch(
       (error) => {
         this.logger.error(
           `Unhandled error generating an assistant response for conversation ${conversationId}`,
@@ -184,34 +185,54 @@ export class ConversationsService {
     question: string,
     history: MessageRow[],
     conversationSummary: string | null,
+    user: RequestUser,
   ): Promise<void> {
     this.chatStreamRegistry.emit(subject, 'message_start', {
       conversationId: conversation.id,
       messageId: assistantMessageId,
     });
 
-    const ragHistory: RagHistoryMessage[] = history.map((row) => ({
+    const agentHistory: HistoryMessage[] = history.map((row) => ({
       role: row.role === 'USER' ? 'user' : 'assistant',
       content: row.content,
     }));
 
-    const sources: RagSourceEventData[] = [];
+    const sources: SourceResponseDto[] = [];
     let answer: string | null = null;
     let model: string | null = null;
     let provider: string | null = null;
 
     try {
-      for await (const event of this.aiServiceRagClient.streamQuery({
+      for await (const event of this.aiServiceAgentClient.streamRun({
         question,
         organizationId: conversation.organization_id,
-        history: ragHistory,
+        userId: user.userId,
+        role: user.role,
+        history: agentHistory,
         conversationSummary,
       })) {
-        if (event.event === 'source') {
-          sources.push(event.data);
-          this.chatStreamRegistry.emit(subject, 'source', event.data);
-        } else if (event.event === 'token') {
-          this.chatStreamRegistry.emit(subject, 'token', event.data);
+        if (event.event === 'tool_call_started' || event.event === 'tool_call_finished') {
+          this.chatStreamRegistry.emit(subject, event.event, event.data);
+          // search_documents' result is Phase 6/7's own retrieval pipeline
+          // (apps/ai-service/app/tools/search_tool.py reuses it directly) —
+          // extracting citations from its tool-call result here is what
+          // keeps the existing `source`/message_sources citation panel
+          // (Phase 8/25) working unchanged now that retrieval happens
+          // through a tool call instead of a dedicated RAG pipeline stage.
+          if (event.event === 'tool_call_finished' && event.data.name === 'search_documents' && event.data.ok && event.data.result) {
+            const results = (event.data.result as { results?: SourceResponseDto[] }).results ?? [];
+            for (const result of results) {
+              const source: SourceResponseDto = {
+                documentId: result.documentId,
+                chunkId: result.chunkId,
+                filename: result.filename,
+                page: result.page,
+                score: result.score,
+              };
+              sources.push(source);
+              this.chatStreamRegistry.emit(subject, 'source', source);
+            }
+          }
         } else if (event.event === 'done') {
           answer = event.data.answer;
           model = event.data.model;

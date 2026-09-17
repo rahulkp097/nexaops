@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { RequestContextService } from '../../observability/request-context.service';
-import { AiServiceRagClient } from './ai-service-rag.client';
+import { AiServiceAgentClient } from './ai-service-agent.client';
 
 function makeSseResponse(body: string, init: { ok?: boolean; status?: number } = {}) {
   const encoder = new TextEncoder();
@@ -31,7 +31,7 @@ async function collect<T>(iterable: AsyncGenerator<T>): Promise<T[]> {
   return items;
 }
 
-describe('AiServiceRagClient', () => {
+describe('AiServiceAgentClient', () => {
   const originalFetch = global.fetch;
 
   afterEach(() => {
@@ -40,34 +40,37 @@ describe('AiServiceRagClient', () => {
 
   function makeClient(aiServiceUrl?: string, requestContext = new RequestContextService()) {
     const config = { get: jest.fn().mockReturnValue(aiServiceUrl) } as unknown as ConfigService;
-    return new AiServiceRagClient(config, requestContext);
+    return new AiServiceAgentClient(config, requestContext);
   }
 
-  it('POSTs question/organizationId/history to AI_SERVICE_URL and yields parsed events', async () => {
+  it('POSTs question/organizationId/userId/role/history to AI_SERVICE_URL and yields parsed events', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValue(
-        makeSseResponse('event: token\ndata: {"text":"Hi"}\n\nevent: done\ndata: {"answer":"Hi"}\n\n'),
+        makeSseResponse(
+          'event: tool_call_started\ndata: {"name":"get_order","arguments":{"orderId":"10291"}}\n\n' +
+            'event: done\ndata: {"answer":"Delayed."}\n\n',
+        ),
       );
     global.fetch = fetchMock as unknown as typeof fetch;
     const client = makeClient('http://ai-service:9000');
 
     const events = await collect(
-      client.streamQuery({ question: 'q', organizationId: 'org-1', history: [] }),
+      client.streamRun({ question: 'q', organizationId: 'org-1', userId: 'user-1', role: 'MANAGER', history: [] }),
     );
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://ai-service:9000/rag/query/stream',
+      'http://ai-service:9000/agent/run/stream',
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: 'q', organizationId: 'org-1', history: [] }),
+        body: JSON.stringify({ question: 'q', organizationId: 'org-1', userId: 'user-1', role: 'MANAGER', history: [] }),
         signal: expect.any(AbortSignal),
       }),
     );
     expect(events).toEqual([
-      { event: 'token', data: { text: 'Hi' } },
-      { event: 'done', data: { answer: 'Hi' } },
+      { event: 'tool_call_started', data: { name: 'get_order', arguments: { orderId: '10291' } } },
+      { event: 'done', data: { answer: 'Delayed.' } },
     ]);
   });
 
@@ -77,20 +80,24 @@ describe('AiServiceRagClient', () => {
     const client = makeClient('http://ai-service:9000');
 
     await collect(
-      client.streamQuery({
+      client.streamRun({
         question: 'q',
         organizationId: 'org-1',
+        userId: 'user-1',
+        role: 'ADMIN',
         history: [],
         conversationSummary: 'The user previously asked about refunds.',
       }),
     );
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://ai-service:9000/rag/query/stream',
+      'http://ai-service:9000/agent/run/stream',
       expect.objectContaining({
         body: JSON.stringify({
           question: 'q',
           organizationId: 'org-1',
+          userId: 'user-1',
+          role: 'ADMIN',
           history: [],
           conversationSummary: 'The user previously asked about refunds.',
         }),
@@ -103,9 +110,9 @@ describe('AiServiceRagClient', () => {
     global.fetch = fetchMock as unknown as typeof fetch;
     const client = makeClient(undefined);
 
-    await collect(client.streamQuery({ question: 'q', organizationId: 'org-1', history: [] }));
+    await collect(client.streamRun({ question: 'q', organizationId: 'org-1', userId: 'user-1', role: 'EMPLOYEE', history: [] }));
 
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8000/rag/query/stream', expect.anything());
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8000/agent/run/stream', expect.anything());
   });
 
   it('throws when the response is not ok', async () => {
@@ -115,7 +122,7 @@ describe('AiServiceRagClient', () => {
     const client = makeClient();
 
     await expect(
-      collect(client.streamQuery({ question: 'q', organizationId: 'org-1', history: [] })),
+      collect(client.streamRun({ question: 'q', organizationId: 'org-1', userId: 'user-1', role: 'ADMIN', history: [] })),
     ).rejects.toThrow('422');
   });
 
@@ -124,7 +131,7 @@ describe('AiServiceRagClient', () => {
     const client = makeClient();
 
     await expect(
-      collect(client.streamQuery({ question: 'q', organizationId: 'org-1', history: [] })),
+      collect(client.streamRun({ question: 'q', organizationId: 'org-1', userId: 'user-1', role: 'ADMIN', history: [] })),
     ).rejects.toThrow('empty response body');
   });
 
@@ -135,7 +142,7 @@ describe('AiServiceRagClient', () => {
     const client = makeClient('http://ai-service:9000', requestContext);
 
     await requestContext.run({ requestId: 'req-1' }, () =>
-      collect(client.streamQuery({ question: 'q', organizationId: 'org-1', history: [] })),
+      collect(client.streamRun({ question: 'q', organizationId: 'org-1', userId: 'user-1', role: 'ADMIN', history: [] })),
     );
 
     expect(fetchMock).toHaveBeenCalledWith(

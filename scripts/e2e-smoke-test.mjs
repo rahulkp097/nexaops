@@ -12,14 +12,17 @@
 //   Submit malicious SQL request        -> runEvaluationChecks()
 //   Submit prompt-injection document     -> uploadDocument() + runEvaluationChecks()
 //
-// Chat doesn't route through the tool/agent loop yet (a known, documented
-// gap — see BUILD_PLAN.md) — POST /conversations/:id/messages only ever
-// calls the plain RAG pipeline. So SQL/business-API/combined/prompt-
-// injection questions are exercised the only way the real API surface
-// currently offers: a real POST /evaluation/runs run over a small fixed
-// set of cases this script seeds for its own fresh organization. Document
-// Q&A and citations go through the real chat/streaming endpoint directly,
-// since that path exists today.
+// Chat now routes through the bounded agent/tool-calling loop (previously
+// only reachable via the standalone /agent/run endpoint), so
+// POST /conversations/:id/messages *can* use SQL/business tools — but with
+// the account's own known zero-credit-balance gap, the LLM call fails
+// before it ever gets to choose a tool, so a real chat message can't prove
+// SQL/business-tool behavior specifically works. Those are still exercised
+// the way that doesn't depend on the LLM's own tool selection at all: a
+// real POST /evaluation/runs run over a small fixed set of cases this
+// script seeds for its own fresh organization (BUSINESS_API/SQL bypass the
+// LLM by design — see BUILD_PLAN.md's Phase 17 writeup). Document Q&A and
+// citations go through the real chat/streaming endpoint directly.
 //
 // Usage: node scripts/e2e-smoke-test.mjs
 // Requires the local stack running (docker compose up -d).
@@ -258,8 +261,9 @@ async function main() {
     JSON.stringify(sourceEvent?.data ?? ragEvents.map((e) => e.event)),
   );
 
-  console.log('\n7. Ask SQL / business API / combined questions (via a real evaluation run — chat itself');
-  console.log('   does not route through tools/agent yet, a known documented gap)');
+  console.log('\n7. Ask SQL / business API / combined questions (via a real evaluation run, which bypasses');
+  console.log('   the LLM\'s own tool selection — the account\'s zero-credit-balance gap means a real chat');
+  console.log('   message can\'t reach a live tool call to prove this against)');
   await seedEvaluationCases(admin.organizationId);
   const runResponse = await fetch(`${API_URL}/evaluation/runs`, {
     method: 'POST',
