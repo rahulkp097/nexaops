@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.agents.orchestrator import run_agent
+from app.agents.orchestrator import run_agent, run_agent_stream
 from app.core.schemas import HistoryMessageDto
 from app.rag.errors import LlmRequestError, LlmUnavailableError
 from app.rag.llm_client import MessageResult, ToolUseRequest
@@ -313,3 +313,86 @@ async def test_offers_only_the_tools_allowed_for_the_caller_role():
         await run_agent("question", _context(role="EMPLOYEE"))
 
     mock_to_tools.assert_called_once_with(role="EMPLOYEE")
+
+
+# run_agent_stream: same bounded loop, as wire-ready AgentStreamEvents
+# instead of one blocking AgentRunResult — see orchestrator.py's own
+# _run_agent_loop docstring for why this is safe to test independently of
+# (and expect identical create_message/registry.execute behavior to) every
+# test above, all of which exercise run_agent, the other consumer of that
+# same shared loop.
+
+
+async def test_stream_emits_only_a_done_event_when_no_tool_is_needed():
+    with patch("app.agents.orchestrator.create_message", new_callable=AsyncMock) as mock_create:
+        mock_create.return_value = _text_result("The answer is 42.")
+
+        events = [evt async for evt in run_agent_stream("What is the answer?", _context())]
+
+    assert [evt.event for evt in events] == ["done"]
+    assert events[0].data["answer"] == "The answer is 42."
+    assert events[0].data["stoppedReason"] == "end_turn"
+    assert events[0].data["iterations"] == 1
+    assert events[0].data["toolCalls"] == []
+    assert events[0].data["model"] and events[0].data["provider"]
+
+
+async def test_stream_emits_tool_call_started_then_finished_before_done():
+    with patch("app.agents.orchestrator.create_message", new_callable=AsyncMock) as mock_create, patch.object(
+        registry, "execute", new_callable=AsyncMock
+    ) as mock_execute:
+        mock_create.side_effect = [
+            _tool_use_result("get_order", {"order_id": "10291"}),
+            _text_result("Order 10291 is delayed."),
+        ]
+        mock_execute.return_value = ToolCallResult(ok=True, data={"found": True, "status": "DELAYED"})
+
+        events = [evt async for evt in run_agent_stream("Why was order 10291 delayed?", _context())]
+
+    assert [evt.event for evt in events] == ["tool_call_started", "tool_call_finished", "done"]
+
+    started = events[0].data
+    assert started == {"name": "get_order", "arguments": {"order_id": "10291"}}
+
+    finished = events[1].data
+    assert finished["name"] == "get_order"
+    assert finished["ok"] is True
+    assert finished["result"] == {"found": True, "status": "DELAYED"}
+    assert finished["errorCode"] is None
+
+    done = events[2].data
+    assert done["answer"] == "Order 10291 is delayed."
+    assert done["toolCalls"] == [
+        {"name": "get_order", "arguments": {"order_id": "10291"}, "ok": True, "result": {"found": True, "status": "DELAYED"}, "errorCode": None}
+    ]
+
+
+async def test_stream_reports_a_failed_tool_call_with_no_result_and_an_error_code():
+    with patch("app.agents.orchestrator.create_message", new_callable=AsyncMock) as mock_create, patch.object(
+        registry, "execute", new_callable=AsyncMock
+    ) as mock_execute:
+        mock_create.side_effect = [
+            _tool_use_result("get_order", {"order_id": "99999"}),
+            _text_result("I couldn't find that order."),
+        ]
+        mock_execute.return_value = ToolCallResult(ok=False, error_code="tool_not_found", error_message="No such tool")
+
+        events = [evt async for evt in run_agent_stream("What about order 99999?", _context())]
+
+    finished = next(evt for evt in events if evt.event == "tool_call_finished").data
+    assert finished["ok"] is False
+    assert finished["result"] is None
+    assert finished["errorCode"] == "tool_not_found"
+
+
+async def test_stream_propagates_llm_errors_uncaught_same_as_run_agent():
+    # Mirrors test_llm_unavailable_error_propagates_instead_of_being_swallowed
+    # above — the generator itself never swallows these; only the route
+    # layer (app/api/agent.py's event_source()) turns them into an `error`
+    # SSE event, exactly like stream_rag_query/app/api/rag.py.
+    with patch("app.agents.orchestrator.create_message", new_callable=AsyncMock) as mock_create:
+        mock_create.side_effect = LlmUnavailableError("rate limited")
+
+        with pytest.raises(LlmUnavailableError):
+            async for _ in run_agent_stream("question", _context()):
+                pass

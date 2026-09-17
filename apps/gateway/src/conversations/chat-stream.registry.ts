@@ -6,7 +6,14 @@ import { Observable, ReplaySubject } from 'rxjs';
 // gets the full replay instead of a 404.
 const SESSION_RETENTION_MS = 5 * 60 * 1000;
 
-export type ChatSseEventType = 'message_start' | 'source' | 'token' | 'message_complete' | 'error';
+export type ChatSseEventType =
+  | 'message_start'
+  | 'source'
+  | 'token'
+  | 'tool_call_started'
+  | 'tool_call_finished'
+  | 'message_complete'
+  | 'error';
 
 // One in-memory pub/sub session per conversation with an in-flight assistant
 // response. A ReplaySubject buffers every emitted event, so a subscriber

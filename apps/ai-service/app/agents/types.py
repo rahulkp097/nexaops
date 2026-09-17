@@ -25,3 +25,14 @@ class AgentRunResult:
     # below (spec §22: safe failure/partial-result handling) — never an
     # exception; a bound being hit is a normal, structured outcome.
     stopped_reason: str = "end_turn"
+
+
+@dataclass(frozen=True)
+class AgentStreamEvent:
+    """One SSE event yielded by run_agent_stream — mirrors
+    app.rag.types.RagStreamEvent's shape. `event` is the SSE `event:` name
+    ("tool_call_started" | "tool_call_finished" | "done"), `data` is its
+    JSON-serializable payload."""
+
+    event: str
+    data: dict[str, Any]

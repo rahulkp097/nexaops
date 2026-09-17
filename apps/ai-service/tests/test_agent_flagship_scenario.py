@@ -23,7 +23,7 @@ through controlled interfaces" (spec §23) end to end.
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-from app.agents.orchestrator import run_agent
+from app.agents.orchestrator import run_agent, run_agent_stream
 from app.rag.llm_client import MessageResult, ToolUseRequest
 from app.rag.types import RetrievedChunk
 from app.tools.bootstrap import register_default_tools
@@ -121,6 +121,85 @@ async def test_flagship_scenario_combines_get_order_and_search_documents():
     assert result.answer == final_answer
     assert result.stopped_reason == "end_turn"
     assert result.iterations == 3
+
+
+async def test_flagship_scenario_streams_real_tool_activity_in_order():
+    """Same combined flow, through run_agent_stream (what the gateway's
+    real chat flow calls) instead of the blocking run_agent — proves the
+    SSE event sequence a real chat UI would render (tool_call_started ->
+    tool_call_finished, twice, in the same order the tools were actually
+    invoked) against real tool execution, not just against the mocked
+    unit-level events in test_agent_orchestrator.py."""
+    register_default_tools()
+
+    order_10291 = {
+        "id": "10291",
+        "customerId": "CUST-1005",
+        "status": "DELAYED",
+        "items": [{"sku": "SKU-2040", "productName": "Precision Servo Motor", "quantity": 3}],
+        "total": 267,
+        "placedAt": "2026-07-14",
+        "expectedDeliveryAt": "2026-07-21",
+        "deliveredAt": None,
+        "delayReason": "Inventory shortage: SKU-2040 (Precision Servo Motor) went out of stock "
+        "before this order could be fulfilled; restock expected 2026-07-25.",
+    }
+    sop_chunk = RetrievedChunk(
+        chunk_id=uuid4(),
+        document_id=uuid4(),
+        filename="operations-sop.txt",
+        content="Order Delay Procedure: notify the customer and offer a refund or restock wait.",
+        page_number=None,
+        score=0.87,
+    )
+    final_answer = "Order 10291 was delayed due to a stock shortage. See operations-sop.txt for the procedure."
+
+    with patch("app.agents.orchestrator.create_message", new_callable=AsyncMock) as mock_create, patch(
+        "app.tools.business_tools.business_client.get_order", new_callable=AsyncMock
+    ) as mock_get_order, patch("app.tools.search_tool.embed_query", new_callable=AsyncMock) as mock_embed, patch(
+        "app.tools.search_tool.retrieve_top_chunks", new_callable=AsyncMock
+    ) as mock_retrieve:
+        mock_get_order.return_value = order_10291
+        mock_embed.return_value = [0.1] * 8
+        mock_retrieve.return_value = [sop_chunk]
+
+        mock_create.side_effect = [
+            _tool_use("toolu_1", "get_order", {"order_id": "10291"}),
+            _tool_use("toolu_2", "search_documents", {"query": "delay procedure"}),
+            _text_only(final_answer),
+        ]
+
+        context = ToolContext(organization_id=uuid4(), user_id=uuid4(), role="MANAGER")
+        events = [
+            evt
+            async for evt in run_agent_stream(
+                "Why was order #10291 delayed and what does the operations SOP recommend?", context
+            )
+        ]
+
+    assert [evt.event for evt in events] == [
+        "tool_call_started",
+        "tool_call_finished",
+        "tool_call_started",
+        "tool_call_finished",
+        "done",
+    ]
+
+    assert events[0].data == {"name": "get_order", "arguments": {"order_id": "10291"}}
+    assert events[1].data["name"] == "get_order"
+    assert events[1].data["ok"] is True
+    assert events[1].data["result"]["delayReason"].startswith("Inventory shortage: SKU-2040")
+
+    assert events[2].data == {"name": "search_documents", "arguments": {"query": "delay procedure"}}
+    assert events[3].data["name"] == "search_documents"
+    assert events[3].data["ok"] is True
+    assert events[3].data["result"]["results"][0]["filename"] == "operations-sop.txt"
+
+    done = events[4].data
+    assert done["answer"] == final_answer
+    assert done["stoppedReason"] == "end_turn"
+    assert done["iterations"] == 3
+    assert len(done["toolCalls"]) == 2
 
 
 async def test_flagship_scenario_still_answers_gracefully_when_the_order_is_unknown():
